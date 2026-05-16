@@ -73,255 +73,539 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
   <title>Scanner</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* ═══════════════════════════════════════════════
+       Design system — Apple Dark
+       ═══════════════════════════════════════════════ */
+    :root {
+      --bg:            #000000;
+      --surface:       #1c1c1e;        /* systemGray6 dark */
+      --surface-2:     #2c2c2e;        /* elevated */
+      --surface-3:     #3a3a3c;        /* pressed */
+      --separator:     rgba(84, 84, 88, 0.45);
+
+      --label-1:       rgba(235, 235, 245, 0.96);
+      --label-2:       rgba(235, 235, 245, 0.60);
+      --label-3:       rgba(235, 235, 245, 0.30);
+      --label-4:       rgba(235, 235, 245, 0.16);
+
+      --blue:          #0a84ff;
+      --green:         #30d158;
+      --red:           #ff453a;
+      --orange:        #ff9f0a;
+      --yellow:        #ffd60a;
+
+      --radius-card:   18px;
+      --radius-btn:    14px;
+      --radius-sm:     10px;
+      --radius-sheet:  20px;
+
+      --ease:          cubic-bezier(0.32, 0.72, 0, 1);
+
+      --font-sys: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                  "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+
+      --safe-top:    env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body { overscroll-behavior: none; }
 
     body {
-      background: #0a0a0a;
-      color: #fff;
-      font-family: monospace;
-      min-height: 100vh;
+      background:
+        radial-gradient(ellipse 120% 60% at 50% -10%, rgba(48, 209, 88, 0.10) 0%, transparent 55%),
+        radial-gradient(ellipse 100% 50% at 50% 110%, rgba(10, 132, 255, 0.07) 0%, transparent 60%),
+        var(--bg);
+      background-attachment: fixed;
+      color: var(--label-1);
+      font-family: var(--font-sys);
+      font-size: 17px;
+      line-height: 1.4;
+      min-height: 100dvh;
+      padding:
+        calc(var(--safe-top) + 12px)
+        20px
+        calc(var(--safe-bottom) + 24px);
+      -webkit-font-smoothing: antialiased;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .app {
+      max-width: 440px;
+      margin: 0 auto;
       display: flex;
       flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ─── Header ─── */
+    .app-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 8px 4px 4px;
+    }
+    .app-title {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      background: linear-gradient(180deg, #ffffff 0%, #b8b8bc 130%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+    }
+    .app-version {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--green);
+      font-variant-numeric: tabular-nums;
+      padding: 4px 8px;
+      background: rgba(48, 209, 88, 0.12);
+      border-radius: 20px;
+      letter-spacing: 0.02em;
+    }
+
+    /* ─── Bouton config (icône flottante) ─── */
+    #cfg-btn {
+      position: fixed;
+      top: calc(var(--safe-top) + 16px);
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      background:
+        linear-gradient(180deg, rgba(70, 70, 74, 0.55) 0%, rgba(28, 28, 30, 0.55) 100%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      backdrop-filter: blur(24px) saturate(180%);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 50%;
+      color: var(--label-1);
+      font-size: 17px;
+      cursor: pointer;
+      z-index: 50;
+      display: flex;
       align-items: center;
-      padding: 24px 16px;
+      justify-content: center;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.08) inset,
+        0 0 0 0.5px rgba(0, 0, 0, 0.3),
+        0 8px 20px -8px rgba(0, 0, 0, 0.6);
+      transition: transform 200ms var(--ease), box-shadow 200ms var(--ease);
+    }
+    #cfg-btn:active {
+      transform: scale(0.92);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.04) inset,
+        0 0 0 0.5px rgba(0, 0, 0, 0.3),
+        0 2px 8px -2px rgba(0, 0, 0, 0.6);
     }
 
-    h1 {
-      font-size: 18px;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      color: #aaa;
-      margin-bottom: 4px;
+    /* ─── Carte scanner ─── */
+    .scanner-card {
+      border-radius: var(--radius-card);
+      overflow: hidden;
+      background: linear-gradient(180deg, #232325 0%, #161618 100%);
+      aspect-ratio: 4 / 3;
+      position: relative;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.08) inset,
+        0 0 0 0.5px rgba(255, 255, 255, 0.06),
+        0 30px 60px -25px rgba(48, 209, 88, 0.18),
+        0 20px 40px -20px rgba(0, 0, 0, 0.7);
     }
-
     #scanner-container {
       width: 100%;
-      max-width: 360px;
-      border-radius: 12px;
-      overflow: hidden;
+      height: 100%;
       position: relative;
-      background: #111;
-      aspect-ratio: 4/3;
     }
-
     #scanner-container video {
       width: 100% !important;
       height: 100% !important;
       object-fit: cover;
       display: block;
     }
-
     #scan-guide {
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 80%;
-      height: 40%;
-      border: 2px solid #00ff88;
-      border-radius: 8px;
-      box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+      width: 78%;
+      height: 44%;
+      border-radius: 12px;
+      box-shadow:
+        0 0 0 2000px rgba(0, 0, 0, 0.5),
+        inset 0 0 0 1.5px rgba(255, 255, 255, 0.9);
       pointer-events: none;
       z-index: 2;
     }
+    /* coins type viseur */
+    #scan-guide::before,
+    #scan-guide::after {
+      content: "";
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      border: 3px solid var(--green);
+      border-radius: 4px;
+      filter: drop-shadow(0 0 6px rgba(48, 209, 88, 0.65)) drop-shadow(0 0 14px rgba(48, 209, 88, 0.35));
+    }
+    #scan-guide::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-top-left-radius: 12px; }
+    #scan-guide::after  { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: 12px; }
 
+    /* ─── Bouton principal ─── */
     #btn {
-      margin-top: 24px;
       width: 100%;
-      max-width: 360px;
-      padding: 16px;
-      background: #00ff88;
-      color: #000;
+      padding: 17px;
+      background: linear-gradient(180deg, #3ce070 0%, #1fa848 100%);
+      color: white;
       border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-family: monospace;
-      font-weight: bold;
-      letter-spacing: 2px;
+      border-radius: var(--radius-btn);
+      font-family: var(--font-sys);
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
       cursor: pointer;
+      text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+        0 1px 0 rgba(0, 0, 0, 0.2),
+        0 10px 28px -10px rgba(48, 209, 88, 0.55),
+        0 4px 14px -4px rgba(0, 0, 0, 0.45);
+      transition: transform 150ms var(--ease), box-shadow 200ms var(--ease), filter 200ms var(--ease);
+    }
+    #btn:active:not(:disabled) {
+      transform: scale(0.97);
+      filter: brightness(0.92);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        0 1px 0 rgba(0, 0, 0, 0.2),
+        0 4px 12px -4px rgba(48, 209, 88, 0.4);
+    }
+    #btn:disabled {
+      background: linear-gradient(180deg, #2c2c2e 0%, #1c1c1e 100%);
+      color: var(--label-3);
+      text-shadow: none;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 0 0 0.5px rgba(255, 255, 255, 0.04);
+      cursor: not-allowed;
+    }
+    #btn.stop {
+      background: linear-gradient(180deg, #ff6b5f 0%, #d8362c 100%);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+        0 1px 0 rgba(0, 0, 0, 0.2),
+        0 10px 28px -10px rgba(255, 69, 58, 0.55),
+        0 4px 14px -4px rgba(0, 0, 0, 0.45);
+    }
+    #btn.stop:active {
+      filter: brightness(0.92);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        0 4px 12px -4px rgba(255, 69, 58, 0.4);
     }
 
-    #btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    #btn.stop { background: #ff4444; color: #fff; }
+    /* ─── Cartes (résultat + logs) ─── */
+    .card {
+      background: linear-gradient(180deg, #242427 0%, #1a1a1c 100%);
+      border-radius: var(--radius-card);
+      padding: 16px;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.06) inset,
+        0 0 0 0.5px rgba(255, 255, 255, 0.04),
+        0 12px 28px -16px rgba(0, 0, 0, 0.6);
+    }
 
-    #result-box, #note-box { margin-top: 24px; width: 100%; max-width: 360px; }
-
-    #result-box label, #note-box label {
-      font-size: 11px;
-      letter-spacing: 3px;
-      color: #555;
-      text-transform: uppercase;
-      display: block;
+    .card-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--label-2);
       margin-bottom: 8px;
+      letter-spacing: -0.01em;
     }
 
     #code-display {
-      background: #111;
-      border: 1px solid #222;
-      border-radius: 10px;
-      padding: 16px;
+      font-family: var(--font-mono);
       font-size: 22px;
-      letter-spacing: 3px;
-      color: #00ff88;
-      min-height: 56px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      background: linear-gradient(180deg, #ffffff 0%, #c8f0d4 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
       word-break: break-all;
+      min-height: 32px;
+      line-height: 1.3;
+      transition: filter 250ms var(--ease);
     }
+    #code-display:not(.placeholder) {
+      filter: drop-shadow(0 0 14px rgba(48, 209, 88, 0.25));
+    }
+    #code-display.placeholder {
+      background: none;
+      -webkit-text-fill-color: var(--label-3);
+      color: var(--label-3);
+      font-weight: 400;
+    }
+
+    /* ─── Logs ─── */
+    .logs-card { padding: 0; overflow: hidden; }
+    .logs-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: transparent;
+      border: none;
+      color: var(--label-1);
+      font-family: var(--font-sys);
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: -0.01em;
+    }
+    .logs-toggle .chev {
+      color: var(--label-3);
+      font-size: 17px;
+      transition: transform 250ms var(--ease);
+    }
+    .logs-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
 
     #log {
-      width: 100%;
-      background: #111;
-      border: 1px solid #222;
-      border-radius: 10px;
-      padding: 14px;
-      color: #aaa;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 300ms var(--ease);
+      font-family: var(--font-mono);
       font-size: 12px;
-      font-family: monospace;
-      min-height: 120px;
-      max-height: 320px;
+      line-height: 1.5;
+      color: var(--label-2);
+      word-break: break-word;
+    }
+    #log.open {
+      max-height: 360px;
       overflow-y: auto;
-      word-break: break-all;
+      padding: 0 16px 14px;
+      border-top: 0.5px solid var(--separator);
     }
+    #log .entry {
+      padding: 6px 0;
+      border-bottom: 0.5px solid rgba(84, 84, 88, 0.2);
+    }
+    #log .entry:last-child { border-bottom: none; }
+    #log .entry.ok   { color: var(--green); }
+    #log .entry.err  { color: var(--red); }
+    #log .entry.warn { color: var(--orange); }
+    #log .entry.info { color: var(--label-2); }
+    #log .entry.dbg  { color: var(--label-3); }
 
-    #log .entry { border-bottom: 1px solid #1a1a1a; padding: 4px 0; line-height: 1.4; }
-    #log .entry.ok { color: #00ff88; }
-    #log .entry.err { color: #ff4444; }
-    #log .entry.warn { color: #ffaa00; }
-    #log .entry.info { color: #aaa; }
-    #log .entry.dbg { color: #666; }
-
+    /* ─── Status ligne ─── */
     #status {
-      margin-top: 12px;
-      font-size: 12px;
-      color: #444;
-      letter-spacing: 1px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--label-2);
       text-align: center;
+      letter-spacing: -0.01em;
+      min-height: 18px;
     }
 
-    /* ─── Bouton config + Modales ─── */
-    #cfg-btn {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      width: 38px;
-      height: 38px;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 8px;
-      color: #aaa;
-      font-size: 16px;
-      cursor: pointer;
-      z-index: 10;
-    }
-
+    /* ═══════════════════════════════════════════════
+       Modales — style iOS sheet
+       ═══════════════════════════════════════════════ */
     .modal {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.85);
+      background: rgba(0, 0, 0, 0.5);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
       display: flex;
-      align-items: center;
+      align-items: flex-end;
       justify-content: center;
-      padding: 16px;
       z-index: 100;
+      animation: modalFadeIn 250ms var(--ease);
     }
     .modal[hidden] { display: none; }
 
+    @keyframes modalFadeIn {
+      from { background: rgba(0, 0, 0, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); }
+    }
+
     .modal-panel {
-      background: #111;
-      border: 1px solid #333;
-      border-radius: 12px;
-      padding: 20px;
+      background: linear-gradient(180deg, #2a2a2d 0%, #1a1a1c 100%);
+      border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+      padding: 24px 20px calc(var(--safe-bottom) + 24px);
       width: 100%;
-      max-width: 380px;
+      max-width: 480px;
+      animation: sheetSlideUp 350ms var(--ease);
+      position: relative;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.08) inset,
+        0 -20px 60px -20px rgba(48, 209, 88, 0.12),
+        0 -10px 40px -10px rgba(0, 0, 0, 0.5);
+    }
+    @media (min-width: 520px) {
+      .modal { align-items: center; }
+      .modal-panel {
+        border-radius: var(--radius-sheet);
+        max-width: 420px;
+        margin: 20px;
+        padding-bottom: 24px;
+      }
+    }
+
+    @keyframes sheetSlideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+
+    /* grabber visuel (iOS) */
+    .modal-panel::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 36px;
+      height: 5px;
+      background: var(--label-4);
+      border-radius: 3px;
+    }
+    @media (min-width: 520px) {
+      .modal-panel::before { display: none; }
     }
 
     .modal-panel h2 {
-      color: #00ff88;
-      font-size: 14px;
-      letter-spacing: 2px;
-      margin-bottom: 16px;
-      text-transform: uppercase;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--label-1);
+      margin-bottom: 20px;
+      margin-top: 8px;
     }
 
     .modal-panel label {
       display: block;
-      margin-bottom: 12px;
-      font-size: 11px;
-      letter-spacing: 2px;
-      color: #888;
-      text-transform: uppercase;
+      margin-bottom: 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--label-2);
+      letter-spacing: -0.01em;
     }
 
     .modal-panel input {
       display: block;
       width: 100%;
-      padding: 10px;
-      margin-top: 4px;
-      background: #000;
-      border: 1px solid #222;
-      border-radius: 6px;
-      color: #fff;
-      font-family: monospace;
-      font-size: 14px;
+      padding: 13px 14px;
+      margin-top: 6px;
+      background: var(--surface-2);
+      border: 0.5px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--label-1);
+      font-family: var(--font-sys);
+      font-size: 16px;
+      transition: background 150ms var(--ease), border-color 150ms var(--ease);
     }
+    .modal-panel input:focus {
+      outline: none;
+      background: var(--surface-3);
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.18);
+    }
+    .modal-panel input::placeholder { color: var(--label-3); }
 
     .modal-help {
-      font-size: 11px;
-      color: #555;
-      line-height: 1.5;
-      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--label-2);
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      background: var(--surface-2);
+      border-radius: var(--radius-sm);
     }
 
     .modal-actions {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       margin-top: 8px;
     }
-
     .modal-actions button {
       flex: 1;
-      padding: 12px;
+      padding: 14px;
       border: none;
-      border-radius: 6px;
-      font-family: monospace;
-      font-weight: bold;
-      font-size: 13px;
+      border-radius: var(--radius-btn);
+      font-family: var(--font-sys);
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
       cursor: pointer;
-      letter-spacing: 1px;
+      transition: transform 150ms var(--ease), background 200ms var(--ease);
     }
-    .btn-cancel { background: #333; color: #aaa; }
-    .btn-save   { background: #00ff88; color: #000; }
+    .modal-actions button:active { transform: scale(0.97); }
+    .btn-cancel {
+      background: linear-gradient(180deg, #3a3a3c 0%, #2c2c2e 100%);
+      color: var(--label-1);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 1px 0 rgba(0, 0, 0, 0.2);
+    }
+    .btn-cancel:active { filter: brightness(0.9); }
+    .btn-save {
+      background: linear-gradient(180deg, #3ce070 0%, #1fa848 100%);
+      color: white;
+      text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 1px 0 rgba(0, 0, 0, 0.2),
+        0 8px 20px -8px rgba(48, 209, 88, 0.5);
+    }
+    .btn-save:active { filter: brightness(0.92); }
 
     .new-code {
-      font-size: 14px;
-      color: #00ff88;
-      background: #000;
-      padding: 12px;
-      border-radius: 6px;
-      margin-bottom: 16px;
+      font-family: var(--font-mono);
+      font-size: 17px;
+      font-weight: 500;
+      color: var(--green);
+      background: var(--surface-2);
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 18px;
       word-break: break-all;
-      letter-spacing: 1px;
+    }
+
+    /* ─── Réduction d'animation (a11y) ─── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 <body>
 
-  <button id="cfg-btn" title="Configuration GitHub">⚙</button>
+  <button id="cfg-btn" aria-label="Configuration">⚙</button>
 
   <!-- Modale Configuration GitHub -->
   <div id="cfg-modal" class="modal" hidden>
     <div class="modal-panel">
-      <h2>Config GitHub</h2>
-      <label>Owner (utilisateur)<input type="text" id="cfg-owner" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label>Repo<input type="text" id="cfg-repo" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label>Branch<input type="text" id="cfg-branch" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label>Chemin du CSV<input type="text" id="cfg-path" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label>Token (PAT)<input type="password" id="cfg-token" autocomplete="off"></label>
-      <p class="modal-help">Token : github.com → Settings → Developer settings → Personal access tokens → Fine-grained → New token. Permission « Contents : Read & Write » sur ce repo uniquement. Le token reste sur ton iPhone (localStorage), il n'est jamais envoyé ailleurs.</p>
+      <h2>Configuration</h2>
+      <label>Owner<input type="text" id="cfg-owner" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ton-pseudo-github"></label>
+      <label>Repo<input type="text" id="cfg-repo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="nom-du-repo"></label>
+      <label>Branch<input type="text" id="cfg-branch" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="main"></label>
+      <label>Chemin du CSV<input type="text" id="cfg-path" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="produits.csv"></label>
+      <label>Token (PAT)<input type="password" id="cfg-token" autocomplete="off" placeholder="github_pat_..."></label>
+      <p class="modal-help">Token GitHub fine-grained avec permission « Contents : Read & Write » sur ce repo uniquement. Stocké uniquement sur ton appareil.</p>
       <div class="modal-actions">
         <button id="cfg-cancel" class="btn-cancel">Annuler</button>
         <button id="cfg-save" class="btn-save">Enregistrer</button>
@@ -334,7 +618,7 @@
     <div class="modal-panel">
       <h2>Nouveau produit</h2>
       <div class="new-code" id="new-code-val"></div>
-      <label>Nom du produit<input type="text" id="new-name" autocomplete="off"></label>
+      <label>Nom du produit<input type="text" id="new-name" autocomplete="off" placeholder="Ex : Nutella 750g"></label>
       <div class="modal-actions">
         <button id="new-cancel" class="btn-cancel">Annuler</button>
         <button id="new-save" class="btn-save">Enregistrer</button>
@@ -342,26 +626,37 @@
     </div>
   </div>
 
-  <h1>Scanner</h1>
-  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V9 · iOS compat</div>
+  <main class="app">
 
-  <div id="scanner-container">
-    <div id="scan-guide"></div>
-  </div>
+    <header class="app-header">
+      <h1 class="app-title">Scanner</h1>
+      <span class="app-version">V12</span>
+    </header>
 
-  <button id="btn" disabled>CHARGEMENT...</button>
+    <section class="scanner-card">
+      <div id="scanner-container">
+        <div id="scan-guide"></div>
+      </div>
+    </section>
 
-  <div id="result-box">
-    <label>Code détecté</label>
-    <div id="code-display">—</div>
-  </div>
+    <button id="btn" disabled>Chargement…</button>
 
-  <div id="note-box">
-    <label>Logs</label>
-    <div id="log"></div>
-  </div>
+    <div id="status">Initialisation…</div>
 
-  <div id="status">Initialisation...</div>
+    <section class="card" id="result-box">
+      <p class="card-label">Code détecté</p>
+      <div id="code-display" class="placeholder">—</div>
+    </section>
+
+    <section class="card logs-card" id="note-box">
+      <button class="logs-toggle" id="logs-toggle" aria-expanded="false" aria-controls="log">
+        <span>Logs</span>
+        <span class="chev">›</span>
+      </button>
+      <div id="log"></div>
+    </section>
+
+  </main>
 
   <script>
     var logEl = document.getElementById('log');
@@ -705,7 +1000,7 @@
 
       var ok = await loadDetector();
       if (!ok) {
-        btn.textContent = 'INDISPONIBLE';
+        btn.textContent = 'Indisponible';
         status.textContent = 'Aucun détecteur utilisable';
         return;
       }
@@ -723,15 +1018,15 @@
           uiLog('Détecteur QR-only OK', 'warn');
         } catch (e2) {
           uiLog('Instanciation totalement échouée: ' + e2.message, 'err');
-          btn.textContent = 'INDISPONIBLE';
+          btn.textContent = 'Indisponible';
           status.textContent = 'Impossible d initialiser le détecteur';
           return;
         }
       }
 
       btn.disabled = false;
-      btn.textContent = 'SCANNER';
-      status.textContent = 'Appuie sur Scanner pour commencer';
+      btn.textContent = 'Scanner';
+      status.textContent = 'Touche Scanner pour commencer';
 
       // Chargement de la base de données (CSV sur GitHub)
       if (GH.owner && GH.repo) {
@@ -747,6 +1042,16 @@
       else stopScanner();
     });
 
+    // ─── Toggle logs (collapse / expand) ───
+    (function () {
+      var btn = document.getElementById('logs-toggle');
+      var log = document.getElementById('log');
+      btn.addEventListener('click', function () {
+        var open = log.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    })();
+
     async function startScanner() {
       if (!detector) {
         uiLog('Détecteur non prêt — abandon', 'err');
@@ -755,9 +1060,9 @@
 
       scanning = true;
       scanCount = 0;
-      document.getElementById('code-display').textContent = '—';
+      setDisplay('—', true);
       var btn = document.getElementById('btn');
-      btn.textContent = 'ARRÊTER';
+      btn.textContent = 'Arrêter';
       btn.classList.add('stop');
       document.getElementById('status').textContent = 'Demande caméra...';
 
@@ -873,33 +1178,38 @@
       loopHandle = requestAnimationFrame(scanLoop);
     }
 
+    function setDisplay(text, isPlaceholder) {
+      var d = document.getElementById('code-display');
+      d.textContent = text;
+      d.classList.toggle('placeholder', !!isPlaceholder);
+    }
+
     function onDetected(code) {
       stopScanner();
-      var display = document.getElementById('code-display');
       var status = document.getElementById('status');
       var hit = productsMap.get(code);
       if (hit) {
-        display.textContent = '#' + hit.numero + ' — ' + hit.nom;
+        setDisplay('#' + hit.numero + ' — ' + hit.nom, false);
         status.textContent = 'Produit existant ✓';
         uiLog('Match : #' + hit.numero + ' ' + hit.nom, 'ok');
         return;
       }
       uiLog('Code inconnu : ' + code, 'warn');
-      display.textContent = code;
-      status.textContent = 'Nouveau code — saisis le nom...';
+      setDisplay(code, false);
+      status.textContent = 'Nouveau code — saisis le nom';
       promptNewProduct(code, function (name) {
         if (!name) {
           status.textContent = 'Enregistrement annulé';
-          display.textContent = code + ' (non enregistré)';
+          setDisplay(code + ' · non enregistré', false);
           return;
         }
-        status.textContent = 'Enregistrement sur GitHub...';
+        status.textContent = 'Enregistrement sur GitHub…';
         saveProduct(code, name).then(function (numero) {
           if (numero) {
-            display.textContent = '#' + numero + ' — ' + name + ' (NOUVEAU)';
+            setDisplay('#' + numero + ' — ' + name, false);
             status.textContent = 'Nouveau produit enregistré ✓';
           } else {
-            display.textContent = code;
+            setDisplay(code, false);
             status.textContent = 'Échec enregistrement — voir logs';
           }
         });
@@ -922,7 +1232,7 @@
         videoEl = null;
       }
       var btn = document.getElementById('btn');
-      btn.textContent = 'SCANNER';
+      btn.textContent = 'Scanner';
       btn.classList.remove('stop');
       var status = document.getElementById('status');
       if (/Caméra|recherche|Demande/.test(status.textContent)) {
