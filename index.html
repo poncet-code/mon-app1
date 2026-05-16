@@ -47,27 +47,6 @@
       display: block;
     }
 
-    .overlay {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-    }
-
-    .scan-line {
-      width: 70%;
-      height: 2px;
-      background: #00ff88;
-      box-shadow: 0 0 8px #00ff88;
-      animation: scan 2s ease-in-out infinite;
-    }
-
-    @keyframes scan {
-      0%, 100% { transform: translateY(-40px); opacity: 0.4; }
-      50% { transform: translateY(40px); opacity: 1; }
-    }
 
     #btn {
       margin-top: 24px;
@@ -160,9 +139,7 @@
 
   <h1>Scanner</h1>
 
-  <div id="scanner-container">
-    <div class="overlay"><div class="scan-line"></div></div>
-  </div>
+  <div id="scanner-container"></div>
 
   <button id="btn" onclick="toggleScanner()">SCANNER</button>
 
@@ -180,6 +157,19 @@
 
   <script>
     let scanning = false;
+    let detectionCounts = {};
+    const REQUIRED_DETECTIONS = 3;
+
+    Quagga.onDetected(function(result) {
+      if (!scanning) return;
+      const code = result.codeResult.code;
+      detectionCounts[code] = (detectionCounts[code] || 0) + 1;
+      if (detectionCounts[code] >= REQUIRED_DETECTIONS) {
+        document.getElementById('code-display').textContent = code;
+        document.getElementById('status').textContent = 'Code détecté ✓';
+        stopScanner();
+      }
+    });
 
     function toggleScanner() {
       if (!scanning) startScanner();
@@ -188,6 +178,8 @@
 
     function startScanner() {
       scanning = true;
+      detectionCounts = {};
+      document.getElementById('code-display').textContent = '—';
       document.getElementById('btn').textContent = 'ARRÊTER';
       document.getElementById('btn').classList.add('stop');
       document.getElementById('status').textContent = 'Caméra active...';
@@ -209,13 +201,6 @@
           return;
         }
         Quagga.start();
-      });
-
-      Quagga.onDetected(function(result) {
-        const code = result.codeResult.code;
-        document.getElementById('code-display').textContent = code;
-        document.getElementById('status').textContent = 'Code détecté ✓';
-        stopScanner();
       });
     }
 
