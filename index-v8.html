@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>Scanner V8</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    h1 {
+      font-size: 18px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: #aaa;
+      margin-bottom: 4px;
+    }
+
+    #scanner-container {
+      width: 100%;
+      max-width: 360px;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      background: #111;
+      aspect-ratio: 4/3;
+    }
+
+    #scanner-container video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+      display: block;
+    }
+
+    #scan-guide {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80%;
+      height: 40%;
+      border: 2px solid #00ff88;
+      border-radius: 8px;
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #btn {
+      margin-top: 24px;
+      width: 100%;
+      max-width: 360px;
+      padding: 16px;
+      background: #00ff88;
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-family: monospace;
+      font-weight: bold;
+      letter-spacing: 2px;
+      cursor: pointer;
+    }
+
+    #btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #btn.stop { background: #ff4444; color: #fff; }
+
+    #result-box, #note-box { margin-top: 24px; width: 100%; max-width: 360px; }
+
+    #result-box label, #note-box label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #555;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    #code-display {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 22px;
+      letter-spacing: 3px;
+      color: #00ff88;
+      min-height: 56px;
+      word-break: break-all;
+    }
+
+    #log {
+      width: 100%;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 14px;
+      color: #aaa;
+      font-size: 12px;
+      font-family: monospace;
+      min-height: 120px;
+      max-height: 300px;
+      overflow-y: auto;
+      word-break: break-all;
+    }
+
+    #log .entry { border-bottom: 1px solid #1a1a1a; padding: 4px 0; line-height: 1.4; }
+    #log .entry.ok { color: #00ff88; }
+    #log .entry.err { color: #ff4444; }
+    #log .entry.warn { color: #ffaa00; }
+    #log .entry.info { color: #aaa; }
+    #log .entry.dbg { color: #666; }
+
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #444;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Scanner</h1>
+  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V8</div>
+
+  <div id="scanner-container">
+    <div id="scan-guide"></div>
+  </div>
+
+  <button id="btn" disabled>CHARGEMENT...</button>
+
+  <div id="result-box">
+    <label>Code détecté</label>
+    <div id="code-display">—</div>
+  </div>
+
+  <div id="note-box">
+    <label>Logs</label>
+    <div id="log"></div>
+  </div>
+
+  <div id="status">Initialisation...</div>
+
+  <!-- Script CLASSIQUE (pas module) pour compat iOS max + capture des erreurs globales -->
+  <script>
+    // ---------- Logger global accessible partout ----------
+    (function () {
+      var logEl = document.getElementById('log');
+      window.uiLog = function (msg, type) {
+        type = type || 'info';
+        try {
+          var line = document.createElement('div');
+          line.className = 'entry ' + type;
+          var t = new Date().toLocaleTimeString();
+          line.textContent = t + ' — ' + msg;
+          logEl.prepend(line);
+        } catch (e) {
+          // fallback console
+          console.log('[uiLog fail]', msg, e);
+        }
+        try { console.log('[' + type + ']', msg); } catch (e) {}
+      };
+
+      // capture toute erreur JS non gérée
+      window.addEventListener('error', function (ev) {
+        window.uiLog('JS ERROR: ' + (ev.message || ev.error) +
+          (ev.filename ? ' @ ' + ev.filename + ':' + ev.lineno : ''), 'err');
+      });
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev.reason;
+        var msg = (r && (r.message || r.toString())) || 'unknown';
+        window.uiLog('UNHANDLED PROMISE: ' + msg, 'err');
+      });
+
+      window.uiLog('Logger prêt', 'ok');
+    })();
+
+    // ---------- Diagnostic environnement ----------
+    (function () {
+      var L = window.uiLog;
+      try {
+        L('UA: ' + navigator.userAgent, 'dbg');
+        L('Plateforme: ' + (navigator.platform || '?'), 'dbg');
+        L('Langue: ' + (navigator.language || '?'), 'dbg');
+        L('isSecureContext: ' + window.isSecureContext, window.isSecureContext ? 'ok' : 'err');
+        L('Protocole: ' + location.protocol, location.protocol === 'https:' || location.hostname === 'localhost' ? 'ok' : 'err');
+        L('mediaDevices: ' + !!(navigator.mediaDevices), navigator.mediaDevices ? 'ok' : 'err');
+        L('getUserMedia: ' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+          (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? 'ok' : 'err');
+        L('WebAssembly: ' + (typeof WebAssembly !== 'undefined'), typeof WebAssembly !== 'undefined' ? 'ok' : 'err');
+
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+          L('⚠ La caméra ne fonctionnera PAS hors HTTPS (sauf localhost). Sers ce fichier via https.', 'warn');
+        }
+
+        // iOS detection
+        var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        L('iOS détecté: ' + isIOS, 'dbg');
+        if (isIOS) {
+          L('Note iOS: tous les navigateurs utilisent WebKit. Chrome iOS = Safari sous le capot.', 'dbg');
+        }
+      } catch (e) {
+        L('Diag err: ' + e.message, 'err');
+      }
+    })();
+  </script>
+
+  <!-- Chargement de zbar-wasm : on tente plusieurs CDN, en module dynamique -->
+  <script>
+    window.scanImageData = null;
+    window.zbarReady = false;
+
+    async function loadZbar() {
+      var L = window.uiLog;
+      var sources = [
+        'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js',
+        'https://unpkg.com/@undecaf/zbar-wasm@0.10.1/dist/index.js',
+        'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js'
+      ];
+      for (var i = 0; i < sources.length; i++) {
+        var url = sources[i];
+        try {
+          L('Tentative chargement zbar-wasm: ' + url, 'info');
+          // import() dynamique fonctionne aussi en script classique
+          var mod = await import(url);
+          if (mod && typeof mod.scanImageData === 'function') {
+            window.scanImageData = mod.scanImageData;
+            window.zbarReady = true;
+            L('zbar-wasm chargé ✓ (' + url.split('@')[1].split('/')[0] + ')', 'ok');
+            return true;
+          } else {
+            L('Module chargé mais scanImageData absent: ' + Object.keys(mod || {}).join(','), 'warn');
+          }
+        } catch (e) {
+          L('Échec ' + url + ' → ' + (e && e.message ? e.message : e), 'err');
+        }
+      }
+      L('Tous les CDN ont échoué pour zbar-wasm', 'err');
+      return false;
+    }
+
+    (async function () {
+      var L = window.uiLog;
+      var btn = document.getElementById('btn');
+      var status = document.getElementById('status');
+      var ok = await loadZbar();
+      if (ok) {
+        btn.disabled = false;
+        btn.textContent = 'SCANNER';
+        status.textContent = 'Appuie sur Scanner pour commencer';
+      } else {
+        btn.textContent = 'ZBAR INDISPONIBLE';
+        status.textContent = 'Impossible de charger zbar-wasm';
+      }
+    })();
+  </script>
+
+  <!-- Logique scanner -->
+  <script>
+    var scanning = false;
+    var stream = null;
+    var videoEl = null;
+    var canvas = null;
+    var ctx = null;
+    var frameCount = 0;
+    var scanCount = 0;
+    var lastScanTs = 0;
+    var loopHandle = null;
+
+    document.getElementById('btn').addEventListener('click', function () {
+      var L = window.uiLog;
+      L('Bouton cliqué (scanning=' + scanning + ')', 'dbg');
+      if (!scanning) startScanner();
+      else stopScanner();
+    });
+
+    async function startScanner() {
+      var L = window.uiLog;
+      if (!window.zbarReady) {
+        L('zbar-wasm pas prêt — abandon', 'err');
+        return;
+      }
+
+      scanning = true;
+      frameCount = 0;
+      scanCount = 0;
+      document.getElementById('code-display').textContent = '—';
+      var btn = document.getElementById('btn');
+      btn.textContent = 'ARRÊTER';
+      btn.classList.add('stop');
+      document.getElementById('status').textContent = 'Demande caméra...';
+
+      // Créer le <video> AVANT le getUserMedia pour respecter le user-gesture iOS
+      videoEl = document.createElement('video');
+      videoEl.setAttribute('playsinline', 'true');
+      videoEl.setAttribute('webkit-playsinline', 'true');
+      videoEl.setAttribute('autoplay', 'true');
+      videoEl.setAttribute('muted', 'true');
+      videoEl.muted = true; // double sécurité iOS
+      videoEl.playsInline = true;
+      document.getElementById('scanner-container').prepend(videoEl);
+      L('Élément <video> créé et inséré', 'dbg');
+
+      // Tenter une contrainte progressive : d'abord environnement HD, sinon n'importe quelle caméra
+      var constraintsTry = [
+        { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: { facingMode: 'environment' }, audio: false },
+        { video: true, audio: false }
+      ];
+
+      var gotStream = false;
+      for (var i = 0; i < constraintsTry.length && !gotStream; i++) {
+        try {
+          L('getUserMedia tentative ' + (i + 1) + ': ' + JSON.stringify(constraintsTry[i].video), 'info');
+          stream = await navigator.mediaDevices.getUserMedia(constraintsTry[i]);
+          gotStream = true;
+          L('Stream obtenu ✓', 'ok');
+        } catch (err) {
+          L('Échec tentative ' + (i + 1) + ': ' + err.name + ' — ' + err.message, 'err');
+        }
+      }
+
+      if (!gotStream) {
+        L('Aucune contrainte n a fonctionné — abandon', 'err');
+        stopScanner();
+        return;
+      }
+
+      try {
+        videoEl.srcObject = stream;
+        L('srcObject assigné', 'dbg');
+
+        // Attendre métadonnées avant play() — fiable sur iOS
+        await new Promise(function (resolve, reject) {
+          var done = false;
+          var to = setTimeout(function () {
+            if (done) return;
+            done = true;
+            reject(new Error('timeout loadedmetadata (5s)'));
+          }, 5000);
+          videoEl.addEventListener('loadedmetadata', function () {
+            if (done) return;
+            done = true;
+            clearTimeout(to);
+            resolve();
+          }, { once: true });
+        });
+        L('loadedmetadata reçu — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
+
+        // play() peut throw sur iOS si l'utilisateur n'a pas interagi
+        try {
+          await videoEl.play();
+          L('video.play() OK', 'ok');
+        } catch (pe) {
+          L('video.play() échec: ' + pe.name + ' — ' + pe.message, 'err');
+          // On tente quand même de continuer (parfois ça scanne quand même)
+        }
+
+        // Diagnostic du track
+        var tracks = stream.getVideoTracks();
+        if (tracks.length) {
+          var s = tracks[0].getSettings ? tracks[0].getSettings() : {};
+          L('Track: ' + tracks[0].label + ' — ' + (s.width || '?') + 'x' + (s.height || '?') +
+            ' @' + (s.frameRate || '?') + 'fps facing=' + (s.facingMode || '?'), 'info');
+        }
+      } catch (err) {
+        L('Erreur préparation vidéo: ' + err.name + ' — ' + err.message, 'err');
+        stopScanner();
+        return;
+      }
+
+      // Canvas — limité à 640px de large pour perf mobile
+      canvas = document.createElement('canvas');
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+      document.getElementById('status').textContent = 'Caméra active — recherche...';
+      L('Démarrage boucle de scan', 'ok');
+      scanLoop();
+    }
+
+    async function scanLoop() {
+      var L = window.uiLog;
+      if (!scanning) return;
+
+      if (!videoEl || videoEl.readyState < 2) {
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      var vw = videoEl.videoWidth;
+      var vh = videoEl.videoHeight;
+      if (!vw || !vh) {
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      // Downscale pour perf : max 640px côté long
+      var maxSide = 640;
+      var scale = Math.min(1, maxSide / Math.max(vw, vh));
+      var cw = Math.round(vw * scale);
+      var ch = Math.round(vh * scale);
+      if (canvas.width !== cw) canvas.width = cw;
+      if (canvas.height !== ch) canvas.height = ch;
+
+      try {
+        ctx.drawImage(videoEl, 0, 0, cw, ch);
+      } catch (e) {
+        L('drawImage err: ' + e.message, 'err');
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      // Limiter le scan à ~10/s pour ne pas saturer
+      var now = performance.now();
+      if (now - lastScanTs < 100) {
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+      lastScanTs = now;
+
+      try {
+        var imageData = ctx.getImageData(0, 0, cw, ch);
+        scanCount++;
+        var symbols = await window.scanImageData(imageData);
+        if (symbols && symbols.length > 0) {
+          var code = symbols[0].decode();
+          var type = symbols[0].typeName || '?';
+          L('Code trouvé: ' + code + ' (' + type + ')', 'ok');
+          onDetected(code);
+          return;
+        }
+      } catch (e) {
+        L('scanImageData err: ' + (e && e.message ? e.message : e), 'err');
+      }
+
+      frameCount++;
+      if (scanCount > 0 && scanCount % 20 === 0) {
+        window.uiLog('Scans effectués: ' + scanCount + ' (canvas ' + cw + 'x' + ch + ')', 'dbg');
+      }
+
+      loopHandle = requestAnimationFrame(scanLoop);
+    }
+
+    function onDetected(code) {
+      document.getElementById('code-display').textContent = code;
+      document.getElementById('status').textContent = 'Code détecté ✓';
+      stopScanner();
+    }
+
+    function stopScanner() {
+      var L = window.uiLog;
+      scanning = false;
+      if (loopHandle) { cancelAnimationFrame(loopHandle); loopHandle = null; }
+      if (stream) {
+        stream.getTracks().forEach(function (t) {
+          try { t.stop(); } catch (e) {}
+        });
+        stream = null;
+      }
+      if (videoEl) {
+        try { videoEl.pause(); } catch (e) {}
+        videoEl.srcObject = null;
+        videoEl.remove();
+        videoEl = null;
+      }
+      canvas = null; ctx = null;
+      var btn = document.getElementById('btn');
+      btn.textContent = 'SCANNER';
+      btn.classList.remove('stop');
+      var status = document.getElementById('status');
+      if (/Caméra|recherche|Demande/.test(status.textContent)) {
+        status.textContent = 'Scan arrêté';
+      }
+      L('Scanner arrêté', 'info');
+    }
+  </script>
+</body>
+</html>
