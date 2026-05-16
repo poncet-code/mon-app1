@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <title>Scanner V8</title>
+  <title>Scanner</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -111,7 +111,7 @@
       font-size: 12px;
       font-family: monospace;
       min-height: 120px;
-      max-height: 300px;
+      max-height: 320px;
       overflow-y: auto;
       word-break: break-all;
     }
@@ -135,7 +135,7 @@
 <body>
 
   <h1>Scanner</h1>
-  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V8</div>
+  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V9 · iOS compat</div>
 
   <div id="scanner-container">
     <div id="scan-guide"></div>
@@ -155,149 +155,149 @@
 
   <div id="status">Initialisation...</div>
 
-  <!-- Script CLASSIQUE (pas module) pour compat iOS max + capture des erreurs globales -->
   <script>
-    // ---------- Logger global accessible partout ----------
-    (function () {
-      var logEl = document.getElementById('log');
-      window.uiLog = function (msg, type) {
-        type = type || 'info';
-        try {
-          var line = document.createElement('div');
-          line.className = 'entry ' + type;
-          var t = new Date().toLocaleTimeString();
-          line.textContent = t + ' — ' + msg;
-          logEl.prepend(line);
-        } catch (e) {
-          // fallback console
-          console.log('[uiLog fail]', msg, e);
-        }
-        try { console.log('[' + type + ']', msg); } catch (e) {}
-      };
-
-      // capture toute erreur JS non gérée
-      window.addEventListener('error', function (ev) {
-        window.uiLog('JS ERROR: ' + (ev.message || ev.error) +
-          (ev.filename ? ' @ ' + ev.filename + ':' + ev.lineno : ''), 'err');
-      });
-      window.addEventListener('unhandledrejection', function (ev) {
-        var r = ev.reason;
-        var msg = (r && (r.message || r.toString())) || 'unknown';
-        window.uiLog('UNHANDLED PROMISE: ' + msg, 'err');
-      });
-
-      window.uiLog('Logger prêt', 'ok');
-    })();
-
-    // ---------- Diagnostic environnement ----------
-    (function () {
-      var L = window.uiLog;
+    var logEl = document.getElementById('log');
+    function uiLog(msg, type) {
+      type = type || 'info';
       try {
-        L('UA: ' + navigator.userAgent, 'dbg');
-        L('Plateforme: ' + (navigator.platform || '?'), 'dbg');
-        L('Langue: ' + (navigator.language || '?'), 'dbg');
-        L('isSecureContext: ' + window.isSecureContext, window.isSecureContext ? 'ok' : 'err');
-        L('Protocole: ' + location.protocol, location.protocol === 'https:' || location.hostname === 'localhost' ? 'ok' : 'err');
-        L('mediaDevices: ' + !!(navigator.mediaDevices), navigator.mediaDevices ? 'ok' : 'err');
-        L('getUserMedia: ' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-          (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? 'ok' : 'err');
-        L('WebAssembly: ' + (typeof WebAssembly !== 'undefined'), typeof WebAssembly !== 'undefined' ? 'ok' : 'err');
+        var line = document.createElement('div');
+        line.className = 'entry ' + type;
+        line.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
+        logEl.prepend(line);
+      } catch (e) {}
+      try { console.log('[' + type + ']', msg); } catch (e) {}
+    }
+    window.uiLog = uiLog;
+
+    window.addEventListener('error', function (ev) {
+      uiLog('JS ERROR: ' + (ev.message || ev.error) +
+        (ev.filename ? ' @ ' + ev.filename + ':' + ev.lineno : ''), 'err');
+    });
+    window.addEventListener('unhandledrejection', function (ev) {
+      var r = ev.reason;
+      uiLog('UNHANDLED PROMISE: ' + ((r && (r.message || r.toString())) || 'unknown'), 'err');
+    });
+
+    uiLog('Logger prêt', 'ok');
+
+    (function diag() {
+      try {
+        uiLog('UA: ' + navigator.userAgent, 'dbg');
+        uiLog('isSecureContext: ' + window.isSecureContext, window.isSecureContext ? 'ok' : 'err');
+        uiLog('Protocole: ' + location.protocol, (location.protocol === 'https:' || location.hostname === 'localhost') ? 'ok' : 'err');
+        uiLog('mediaDevices: ' + !!(navigator.mediaDevices), navigator.mediaDevices ? 'ok' : 'err');
+        uiLog('WebAssembly: ' + (typeof WebAssembly !== 'undefined'), typeof WebAssembly !== 'undefined' ? 'ok' : 'err');
+        uiLog('BarcodeDetector natif: ' + ('BarcodeDetector' in window), ('BarcodeDetector' in window) ? 'ok' : 'warn');
 
         if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-          L('⚠ La caméra ne fonctionnera PAS hors HTTPS (sauf localhost). Sers ce fichier via https.', 'warn');
+          uiLog('⚠ La caméra exige HTTPS (sauf localhost). Sur GitHub Pages ça marchera.', 'warn');
         }
 
-        // iOS detection
         var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        L('iOS détecté: ' + isIOS, 'dbg');
-        if (isIOS) {
-          L('Note iOS: tous les navigateurs utilisent WebKit. Chrome iOS = Safari sous le capot.', 'dbg');
-        }
+        uiLog('iOS détecté: ' + isIOS, 'dbg');
       } catch (e) {
-        L('Diag err: ' + e.message, 'err');
+        uiLog('Diag err: ' + e.message, 'err');
       }
     })();
-  </script>
 
-  <!-- Chargement de zbar-wasm : on tente plusieurs CDN, en module dynamique -->
-  <script>
-    window.scanImageData = null;
-    window.zbarReady = false;
-
-    async function loadZbar() {
-      var L = window.uiLog;
-      var sources = [
-        'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js',
-        'https://unpkg.com/@undecaf/zbar-wasm@0.10.1/dist/index.js',
-        'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js'
-      ];
-      for (var i = 0; i < sources.length; i++) {
-        var url = sources[i];
-        try {
-          L('Tentative chargement zbar-wasm: ' + url, 'info');
-          // import() dynamique fonctionne aussi en script classique
-          var mod = await import(url);
-          if (mod && typeof mod.scanImageData === 'function') {
-            window.scanImageData = mod.scanImageData;
-            window.zbarReady = true;
-            L('zbar-wasm chargé ✓ (' + url.split('@')[1].split('/')[0] + ')', 'ok');
-            return true;
-          } else {
-            L('Module chargé mais scanImageData absent: ' + Object.keys(mod || {}).join(','), 'warn');
-          }
-        } catch (e) {
-          L('Échec ' + url + ' → ' + (e && e.message ? e.message : e), 'err');
-        }
-      }
-      L('Tous les CDN ont échoué pour zbar-wasm', 'err');
-      return false;
-    }
-
-    (async function () {
-      var L = window.uiLog;
-      var btn = document.getElementById('btn');
-      var status = document.getElementById('status');
-      var ok = await loadZbar();
-      if (ok) {
-        btn.disabled = false;
-        btn.textContent = 'SCANNER';
-        status.textContent = 'Appuie sur Scanner pour commencer';
-      } else {
-        btn.textContent = 'ZBAR INDISPONIBLE';
-        status.textContent = 'Impossible de charger zbar-wasm';
-      }
-    })();
-  </script>
-
-  <!-- Logique scanner -->
-  <script>
     var scanning = false;
     var stream = null;
     var videoEl = null;
-    var canvas = null;
-    var ctx = null;
-    var frameCount = 0;
-    var scanCount = 0;
-    var lastScanTs = 0;
+    var detector = null;
     var loopHandle = null;
+    var lastScanTs = 0;
+    var scanCount = 0;
+    var BarcodeDetectorClass = null;
+
+    async function loadDetector() {
+      if ('BarcodeDetector' in window) {
+        try {
+          var formats = await window.BarcodeDetector.getSupportedFormats();
+          uiLog('Natif dispo. Formats: ' + formats.join(', '), 'ok');
+          BarcodeDetectorClass = window.BarcodeDetector;
+          return true;
+        } catch (e) {
+          uiLog('Natif présent mais cassé: ' + e.message + ' — fallback polyfill', 'warn');
+        }
+      } else {
+        uiLog('Pas de BarcodeDetector natif → chargement polyfill ZXing...', 'info');
+      }
+
+      var sources = [
+        'https://esm.sh/barcode-detector@2/pure',
+        'https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js',
+        'https://unpkg.com/barcode-detector@2/dist/es/pure.min.js'
+      ];
+
+      for (var i = 0; i < sources.length; i++) {
+        var url = sources[i];
+        try {
+          uiLog('Polyfill tentative ' + (i + 1) + ': ' + url, 'info');
+          var mod = await import(url);
+          if (mod && mod.BarcodeDetector) {
+            BarcodeDetectorClass = mod.BarcodeDetector;
+            uiLog('Polyfill chargé ✓', 'ok');
+            return true;
+          } else {
+            uiLog('Module reçu mais sans BarcodeDetector: ' + Object.keys(mod || {}).join(','), 'warn');
+          }
+        } catch (e) {
+          uiLog('Échec ' + (i + 1) + ': ' + (e && e.message ? e.message : e), 'err');
+        }
+      }
+      uiLog('Tous les CDN polyfill ont échoué', 'err');
+      return false;
+    }
+
+    (async function init() {
+      var btn = document.getElementById('btn');
+      var status = document.getElementById('status');
+
+      var ok = await loadDetector();
+      if (!ok) {
+        btn.textContent = 'INDISPONIBLE';
+        status.textContent = 'Aucun détecteur utilisable';
+        return;
+      }
+
+      try {
+        detector = new BarcodeDetectorClass({
+          formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'code_93',
+                    'codabar', 'upc_a', 'upc_e', 'itf', 'pdf417', 'data_matrix', 'aztec']
+        });
+        uiLog('Détecteur instancié ✓ (toutes formats)', 'ok');
+      } catch (e) {
+        uiLog('Instanciation full formats échoue: ' + e.message + ' — fallback QR seul', 'warn');
+        try {
+          detector = new BarcodeDetectorClass({ formats: ['qr_code'] });
+          uiLog('Détecteur QR-only OK', 'warn');
+        } catch (e2) {
+          uiLog('Instanciation totalement échouée: ' + e2.message, 'err');
+          btn.textContent = 'INDISPONIBLE';
+          status.textContent = 'Impossible d initialiser le détecteur';
+          return;
+        }
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'SCANNER';
+      status.textContent = 'Appuie sur Scanner pour commencer';
+    })();
 
     document.getElementById('btn').addEventListener('click', function () {
-      var L = window.uiLog;
-      L('Bouton cliqué (scanning=' + scanning + ')', 'dbg');
+      uiLog('Bouton cliqué (scanning=' + scanning + ')', 'dbg');
       if (!scanning) startScanner();
       else stopScanner();
     });
 
     async function startScanner() {
-      var L = window.uiLog;
-      if (!window.zbarReady) {
-        L('zbar-wasm pas prêt — abandon', 'err');
+      if (!detector) {
+        uiLog('Détecteur non prêt — abandon', 'err');
         return;
       }
 
       scanning = true;
-      frameCount = 0;
       scanCount = 0;
       document.getElementById('code-display').textContent = '—';
       var btn = document.getElementById('btn');
@@ -305,47 +305,44 @@
       btn.classList.add('stop');
       document.getElementById('status').textContent = 'Demande caméra...';
 
-      // Créer le <video> AVANT le getUserMedia pour respecter le user-gesture iOS
       videoEl = document.createElement('video');
       videoEl.setAttribute('playsinline', 'true');
       videoEl.setAttribute('webkit-playsinline', 'true');
       videoEl.setAttribute('autoplay', 'true');
       videoEl.setAttribute('muted', 'true');
-      videoEl.muted = true; // double sécurité iOS
+      videoEl.muted = true;
       videoEl.playsInline = true;
       document.getElementById('scanner-container').prepend(videoEl);
-      L('Élément <video> créé et inséré', 'dbg');
+      uiLog('Élément <video> créé', 'dbg');
 
-      // Tenter une contrainte progressive : d'abord environnement HD, sinon n'importe quelle caméra
-      var constraintsTry = [
+      var tries = [
         { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
         { video: { facingMode: 'environment' }, audio: false },
         { video: true, audio: false }
       ];
 
-      var gotStream = false;
-      for (var i = 0; i < constraintsTry.length && !gotStream; i++) {
+      var got = false;
+      for (var i = 0; i < tries.length && !got; i++) {
         try {
-          L('getUserMedia tentative ' + (i + 1) + ': ' + JSON.stringify(constraintsTry[i].video), 'info');
-          stream = await navigator.mediaDevices.getUserMedia(constraintsTry[i]);
-          gotStream = true;
-          L('Stream obtenu ✓', 'ok');
+          uiLog('getUserMedia tentative ' + (i + 1) + ': ' + JSON.stringify(tries[i].video), 'info');
+          stream = await navigator.mediaDevices.getUserMedia(tries[i]);
+          got = true;
+          uiLog('Stream obtenu ✓', 'ok');
         } catch (err) {
-          L('Échec tentative ' + (i + 1) + ': ' + err.name + ' — ' + err.message, 'err');
+          uiLog('Échec tentative ' + (i + 1) + ': ' + err.name + ' — ' + err.message, 'err');
         }
       }
 
-      if (!gotStream) {
-        L('Aucune contrainte n a fonctionné — abandon', 'err');
+      if (!got) {
+        uiLog('Aucune contrainte n a fonctionné', 'err');
         stopScanner();
         return;
       }
 
       try {
         videoEl.srcObject = stream;
-        L('srcObject assigné', 'dbg');
+        uiLog('srcObject assigné', 'dbg');
 
-        // Attendre métadonnées avant play() — fiable sur iOS
         await new Promise(function (resolve, reject) {
           var done = false;
           var to = setTimeout(function () {
@@ -360,40 +357,32 @@
             resolve();
           }, { once: true });
         });
-        L('loadedmetadata reçu — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
+        uiLog('loadedmetadata — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
 
-        // play() peut throw sur iOS si l'utilisateur n'a pas interagi
         try {
           await videoEl.play();
-          L('video.play() OK', 'ok');
+          uiLog('video.play() OK', 'ok');
         } catch (pe) {
-          L('video.play() échec: ' + pe.name + ' — ' + pe.message, 'err');
-          // On tente quand même de continuer (parfois ça scanne quand même)
+          uiLog('video.play() échec: ' + pe.name + ' — ' + pe.message, 'err');
         }
 
-        // Diagnostic du track
         var tracks = stream.getVideoTracks();
         if (tracks.length) {
           var s = tracks[0].getSettings ? tracks[0].getSettings() : {};
-          L('Track: ' + tracks[0].label + ' — ' + (s.width || '?') + 'x' + (s.height || '?') +
-            ' @' + (s.frameRate || '?') + 'fps facing=' + (s.facingMode || '?'), 'info');
+          uiLog('Track: ' + (s.width || '?') + 'x' + (s.height || '?') + ' facing=' + (s.facingMode || '?'), 'info');
         }
       } catch (err) {
-        L('Erreur préparation vidéo: ' + err.name + ' — ' + err.message, 'err');
+        uiLog('Erreur vidéo: ' + err.name + ' — ' + err.message, 'err');
         stopScanner();
         return;
       }
 
-      // Canvas — limité à 640px de large pour perf mobile
-      canvas = document.createElement('canvas');
-      ctx = canvas.getContext('2d', { willReadFrequently: true });
       document.getElementById('status').textContent = 'Caméra active — recherche...';
-      L('Démarrage boucle de scan', 'ok');
+      uiLog('Démarrage boucle de scan', 'ok');
       scanLoop();
     }
 
     async function scanLoop() {
-      var L = window.uiLog;
       if (!scanning) return;
 
       if (!videoEl || videoEl.readyState < 2) {
@@ -401,55 +390,28 @@
         return;
       }
 
-      var vw = videoEl.videoWidth;
-      var vh = videoEl.videoHeight;
-      if (!vw || !vh) {
-        loopHandle = requestAnimationFrame(scanLoop);
-        return;
-      }
-
-      // Downscale pour perf : max 640px côté long
-      var maxSide = 640;
-      var scale = Math.min(1, maxSide / Math.max(vw, vh));
-      var cw = Math.round(vw * scale);
-      var ch = Math.round(vh * scale);
-      if (canvas.width !== cw) canvas.width = cw;
-      if (canvas.height !== ch) canvas.height = ch;
-
-      try {
-        ctx.drawImage(videoEl, 0, 0, cw, ch);
-      } catch (e) {
-        L('drawImage err: ' + e.message, 'err');
-        loopHandle = requestAnimationFrame(scanLoop);
-        return;
-      }
-
-      // Limiter le scan à ~10/s pour ne pas saturer
       var now = performance.now();
-      if (now - lastScanTs < 100) {
+      if (now - lastScanTs < 150) {
         loopHandle = requestAnimationFrame(scanLoop);
         return;
       }
       lastScanTs = now;
 
       try {
-        var imageData = ctx.getImageData(0, 0, cw, ch);
+        var codes = await detector.detect(videoEl);
         scanCount++;
-        var symbols = await window.scanImageData(imageData);
-        if (symbols && symbols.length > 0) {
-          var code = symbols[0].decode();
-          var type = symbols[0].typeName || '?';
-          L('Code trouvé: ' + code + ' (' + type + ')', 'ok');
-          onDetected(code);
+        if (codes && codes.length > 0) {
+          var c = codes[0];
+          uiLog('Code trouvé: ' + c.rawValue + ' (' + c.format + ')', 'ok');
+          onDetected(c.rawValue);
           return;
         }
       } catch (e) {
-        L('scanImageData err: ' + (e && e.message ? e.message : e), 'err');
+        uiLog('detect err: ' + (e && e.message ? e.message : e), 'err');
       }
 
-      frameCount++;
-      if (scanCount > 0 && scanCount % 20 === 0) {
-        window.uiLog('Scans effectués: ' + scanCount + ' (canvas ' + cw + 'x' + ch + ')', 'dbg');
+      if (scanCount > 0 && scanCount % 30 === 0) {
+        uiLog('Scans effectués: ' + scanCount, 'dbg');
       }
 
       loopHandle = requestAnimationFrame(scanLoop);
@@ -462,7 +424,6 @@
     }
 
     function stopScanner() {
-      var L = window.uiLog;
       scanning = false;
       if (loopHandle) { cancelAnimationFrame(loopHandle); loopHandle = null; }
       if (stream) {
@@ -477,7 +438,6 @@
         videoEl.remove();
         videoEl = null;
       }
-      canvas = null; ctx = null;
       var btn = document.getElementById('btn');
       btn.textContent = 'SCANNER';
       btn.classList.remove('stop');
@@ -485,7 +445,7 @@
       if (/Caméra|recherche|Demande/.test(status.textContent)) {
         status.textContent = 'Scan arrêté';
       }
-      L('Scanner arrêté', 'info');
+      uiLog('Scanner arrêté', 'info');
     }
   </script>
 </body>
