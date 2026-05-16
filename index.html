@@ -152,6 +152,7 @@
 <body>
 
   <h1>Scanner</h1>
+  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-top:-24px;margin-bottom:24px;">V6</div>
 
   <div id="scanner-container">
     <div id="scan-guide"></div>
@@ -177,6 +178,7 @@
     let videoEl = null;
     let rafId = null;
     let zxingReader = null;
+    let zxingCanvas = null;
 
     const USE_NATIVE = 'BarcodeDetector' in window;
     let barcodeDetector = null;
@@ -223,66 +225,74 @@
       videoEl.muted = true;
       document.getElementById('scanner-container').prepend(videoEl);
 
+      try {
+        log('Demande accès caméra...');
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        log('Caméra obtenue', 'ok');
+        videoEl.srcObject = stream;
+        await videoEl.play();
+        log('Vidéo en lecture — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
+      } catch (err) {
+        log('Erreur caméra : ' + err.name + ' — ' + err.message, 'err');
+        document.getElementById('status').textContent = 'Erreur caméra : ' + err.message;
+        stopScanner();
+        return;
+      }
+
       if (USE_NATIVE) {
-        try {
-          log('Demande accès caméra...');
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-          });
-          log('Caméra obtenue', 'ok');
-          videoEl.srcObject = stream;
-          await videoEl.play();
-          log('Vidéo en lecture — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
-        } catch (err) {
-          log('Erreur caméra : ' + err.name + ' — ' + err.message, 'err');
-          document.getElementById('status').textContent = 'Erreur caméra : ' + err.message;
-          stopScanner();
-          return;
-        }
         rafLoop();
       } else {
-        log('ZXing : decodeFromConstraints...');
+        log('ZXing : boucle canvas manuelle...');
         const hints = new Map([[ZXing.DecodeHintType.TRY_HARDER, true]]);
         zxingReader = new ZXing.BrowserMultiFormatReader(hints);
-        try {
-          await zxingReader.decodeFromConstraints(
-            { video: { facingMode: 'environment' } },
-            videoEl,
-            (result, err) => {
-              if (err && !(err instanceof ZXing.NotFoundException)) {
-                log('ZXing err : ' + err.message, 'err');
-              }
-              if (result && scanning) onDetected(result.getText());
-            }
-          );
-          log('ZXing actif', 'ok');
-        } catch (err) {
-          log('ZXing init error : ' + err.message, 'err');
-          document.getElementById('status').textContent = 'Erreur : ' + err.message;
-          stopScanner();
-        }
+        zxingCanvas = document.createElement('canvas');
+        rafLoop();
       }
     }
 
     let frameCount = 0;
     function rafLoop() {
       if (!scanning) return;
-      barcodeDetector.detect(videoEl)
-        .then(codes => {
-          if (!scanning) return;
-          frameCount++;
-          if (frameCount % 30 === 0) log('Frames analysées : ' + frameCount);
-          if (codes.length > 0) {
-            log('Code trouvé : ' + codes[0].rawValue + ' (' + codes[0].format + ')', 'ok');
-            onDetected(codes[0].rawValue);
-          } else {
-            rafId = requestAnimationFrame(rafLoop);
+
+      if (USE_NATIVE) {
+        barcodeDetector.detect(videoEl)
+          .then(codes => {
+            if (!scanning) return;
+            frameCount++;
+            if (frameCount % 30 === 0) log('Frames analysées : ' + frameCount);
+            if (codes.length > 0) {
+              log('Code trouvé : ' + codes[0].rawValue + ' (' + codes[0].format + ')', 'ok');
+              onDetected(codes[0].rawValue);
+            } else {
+              rafId = requestAnimationFrame(rafLoop);
+            }
+          })
+          .catch(err => {
+            log('detect() error : ' + err.message, 'err');
+            if (scanning) rafId = requestAnimationFrame(rafLoop);
+          });
+      } else {
+        if (videoEl.readyState < 2) {
+          rafId = requestAnimationFrame(rafLoop);
+          return;
+        }
+        zxingCanvas.width = videoEl.videoWidth;
+        zxingCanvas.height = videoEl.videoHeight;
+        zxingCanvas.getContext('2d').drawImage(videoEl, 0, 0);
+        try {
+          const result = zxingReader.decodeFromCanvas(zxingCanvas);
+          if (result) {
+            log('ZXing trouvé : ' + result.getText(), 'ok');
+            onDetected(result.getText());
+            return;
           }
-        })
-        .catch(err => {
-          log('detect() error : ' + err.message, 'err');
-          if (scanning) rafId = requestAnimationFrame(rafLoop);
-        });
+        } catch (e) { /* NotFoundException = frame sans code, normal */ }
+        frameCount++;
+        if (frameCount % 30 === 0) log('ZXing frames : ' + frameCount);
+        rafId = requestAnimationFrame(rafLoop);
+      }
     }
 
     function onDetected(code) {
@@ -295,7 +305,8 @@
       scanning = false;
       frameCount = 0;
       cancelAnimationFrame(rafId);
-      if (zxingReader) { zxingReader.reset(); zxingReader = null; }
+      if (zxingReader) { zxingReader = null; }
+      zxingCanvas = null;
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (videoEl) { videoEl.remove(); videoEl = null; }
       document.getElementById('btn').textContent = 'SCANNER';
