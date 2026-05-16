@@ -174,8 +174,6 @@
   <div id="status">Appuie sur Scanner pour commencer</div>
 
   <script type="module">
-    import { scanImageData } from 'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js';
-
     let scanning = false;
     let stream = null;
     let videoEl = null;
@@ -183,6 +181,7 @@
     let canvas = null;
     let ctx = null;
     let frameCount = 0;
+    let scanImageData = null;
 
     function log(msg, type = 'info') {
       const el = document.getElementById('log');
@@ -192,7 +191,15 @@
       el.prepend(line);
     }
 
-    log('zbar-wasm chargé', 'ok');
+    log('Script démarré');
+
+    try {
+      const mod = await import('https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js');
+      scanImageData = mod.scanImageData;
+      log('zbar-wasm chargé ✓', 'ok');
+    } catch(e) {
+      log('Erreur chargement zbar-wasm : ' + e.message, 'err');
+    }
 
     window.toggleScanner = function() {
       if (!scanning) startScanner();
@@ -200,6 +207,10 @@
     };
 
     async function startScanner() {
+      if (!scanImageData) {
+        log('zbar-wasm pas encore chargé, attends...', 'err');
+        return;
+      }
       scanning = true;
       frameCount = 0;
       document.getElementById('code-display').textContent = '—';
