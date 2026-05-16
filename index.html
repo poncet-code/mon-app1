@@ -571,17 +571,51 @@
     document.getElementById('cfg-cancel').addEventListener('click', function () {
       document.getElementById('cfg-modal').hidden = true;
     });
+    // Nettoie les inputs : whitespace + caractères non-imprimables (NBSP, zero-width, etc.)
+    function cleanInput(v) {
+      return (v || '').trim().replace(/[^\x21-\x7eÀ-ſ]/g, '');
+    }
+    function cleanToken(v) {
+      // Tokens GitHub : ASCII imprimable uniquement
+      return (v || '').trim().replace(/[^\x21-\x7e]/g, '');
+    }
+
     document.getElementById('cfg-save').addEventListener('click', function () {
-      GH.owner  = document.getElementById('cfg-owner').value.trim();
-      GH.repo   = document.getElementById('cfg-repo').value.trim();
-      GH.branch = document.getElementById('cfg-branch').value.trim() || 'main';
-      GH.path   = document.getElementById('cfg-path').value.trim()   || 'produits.csv';
-      GH.token  = document.getElementById('cfg-token').value.trim();
+      GH.owner  = cleanInput(document.getElementById('cfg-owner').value);
+      GH.repo   = cleanInput(document.getElementById('cfg-repo').value);
+      GH.branch = cleanInput(document.getElementById('cfg-branch').value) || 'main';
+      GH.path   = cleanInput(document.getElementById('cfg-path').value)   || 'produits.csv';
+      var rawToken = document.getElementById('cfg-token').value;
+      GH.token  = cleanToken(rawToken);
+      if (rawToken.length !== GH.token.length) {
+        uiLog('⚠ Token contenait ' + (rawToken.length - GH.token.length) + ' caractère(s) invisible(s) — nettoyés', 'warn');
+      }
       saveGHConfig();
       document.getElementById('cfg-modal').hidden = true;
-      uiLog('Config sauvegardée', 'ok');
-      loadDatabase();
+      uiLog('Config OK : ' + GH.owner + '/' + GH.repo + ' @ ' + GH.branch + ' / ' + GH.path + ' (token ' + GH.token.length + ' chars)', 'ok');
+      pingGitHub().then(function (ok) {
+        if (ok) loadDatabase();
+      });
     });
+
+    // Test connectivité GitHub (séparé de loadDatabase pour diagnostiquer)
+    async function pingGitHub() {
+      try {
+        uiLog('Ping api.github.com...', 'dbg');
+        var res = await fetch('https://api.github.com/zen', { cache: 'no-store' });
+        if (res.ok) {
+          var txt = await res.text();
+          uiLog('Ping GitHub OK : « ' + txt + ' »', 'ok');
+          return true;
+        }
+        uiLog('Ping GitHub HTTP ' + res.status, 'err');
+        return false;
+      } catch (e) {
+        var msg = e.message || String(e);
+        uiLog('Ping GitHub ÉCHEC : ' + msg + ' → api.github.com est INACCESSIBLE depuis ce navigateur (content blocker, VPN, sandbox preview, ou réseau bloqué)', 'err');
+        return false;
+      }
+    }
 
     function promptNewProduct(code, callback) {
       document.getElementById('new-code-val').textContent = code;
