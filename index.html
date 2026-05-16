@@ -120,22 +120,25 @@
       margin-bottom: 8px;
     }
 
-    #note {
+    #log {
       width: 100%;
       background: #111;
       border: 1px solid #222;
       border-radius: 10px;
       padding: 14px;
-      color: #fff;
-      font-size: 16px;
+      color: #aaa;
+      font-size: 12px;
       font-family: monospace;
-      resize: none;
-      outline: none;
+      min-height: 120px;
+      max-height: 200px;
+      overflow-y: auto;
+      word-break: break-all;
     }
 
-    #note:focus {
-      border-color: #00ff88;
-    }
+    #log .entry { border-bottom: 1px solid #1a1a1a; padding: 4px 0; }
+    #log .entry.ok { color: #00ff88; }
+    #log .entry.err { color: #ff4444; }
+    #log .entry.info { color: #aaa; }
 
     #status {
       margin-top: 12px;
@@ -162,8 +165,8 @@
   </div>
 
   <div id="note-box">
-    <label>Note</label>
-    <textarea id="note" rows="3" placeholder="Écris quelque chose..."></textarea>
+    <label>Logs</label>
+    <div id="log"></div>
   </div>
 
   <div id="status">Appuie sur Scanner pour commencer</div>
@@ -178,10 +181,28 @@
     const USE_NATIVE = 'BarcodeDetector' in window;
     let barcodeDetector = null;
 
+    function log(msg, type = 'info') {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      line.className = 'entry ' + type;
+      line.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
+      el.prepend(line);
+    }
+
+    log('USE_NATIVE BarcodeDetector : ' + USE_NATIVE);
+    log('User Agent : ' + navigator.userAgent.slice(0, 80));
+
     if (USE_NATIVE) {
-      barcodeDetector = new BarcodeDetector({
-        formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e']
-      });
+      try {
+        barcodeDetector = new BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e']
+        });
+        log('BarcodeDetector initialisé', 'ok');
+      } catch(e) {
+        log('BarcodeDetector init error : ' + e.message, 'err');
+      }
+    } else {
+      log('Fallback ZXing activé');
     }
 
     function toggleScanner() {
@@ -195,6 +216,7 @@
       document.getElementById('btn').textContent = 'ARRÊTER';
       document.getElementById('btn').classList.add('stop');
       document.getElementById('status').textContent = 'Caméra active...';
+      log('Démarrage scanner...');
 
       videoEl = document.createElement('video');
       videoEl.setAttribute('playsinline', '');
@@ -203,19 +225,23 @@
 
       if (USE_NATIVE) {
         try {
+          log('Demande accès caméra...');
           stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
           });
+          log('Caméra obtenue', 'ok');
           videoEl.srcObject = stream;
           await videoEl.play();
+          log('Vidéo en lecture — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
         } catch (err) {
+          log('Erreur caméra : ' + err.name + ' — ' + err.message, 'err');
           document.getElementById('status').textContent = 'Erreur caméra : ' + err.message;
           stopScanner();
           return;
         }
         rafLoop();
       } else {
-        // Fallback ZXing
+        log('ZXing : decodeFromConstraints...');
         const hints = new Map([[ZXing.DecodeHintType.TRY_HARDER, true]]);
         zxingReader = new ZXing.BrowserMultiFormatReader(hints);
         try {
@@ -223,25 +249,38 @@
             { video: { facingMode: 'environment' } },
             videoEl,
             (result, err) => {
+              if (err && !(err instanceof ZXing.NotFoundException)) {
+                log('ZXing err : ' + err.message, 'err');
+              }
               if (result && scanning) onDetected(result.getText());
             }
           );
+          log('ZXing actif', 'ok');
         } catch (err) {
-          document.getElementById('status').textContent = 'Erreur caméra : ' + err.message;
+          log('ZXing init error : ' + err.message, 'err');
+          document.getElementById('status').textContent = 'Erreur : ' + err.message;
           stopScanner();
         }
       }
     }
 
+    let frameCount = 0;
     function rafLoop() {
       if (!scanning) return;
       barcodeDetector.detect(videoEl)
         .then(codes => {
           if (!scanning) return;
-          if (codes.length > 0) onDetected(codes[0].rawValue);
-          else rafId = requestAnimationFrame(rafLoop);
+          frameCount++;
+          if (frameCount % 30 === 0) log('Frames analysées : ' + frameCount);
+          if (codes.length > 0) {
+            log('Code trouvé : ' + codes[0].rawValue + ' (' + codes[0].format + ')', 'ok');
+            onDetected(codes[0].rawValue);
+          } else {
+            rafId = requestAnimationFrame(rafLoop);
+          }
         })
-        .catch(() => {
+        .catch(err => {
+          log('detect() error : ' + err.message, 'err');
           if (scanning) rafId = requestAnimationFrame(rafLoop);
         });
     }
@@ -254,6 +293,7 @@
 
     function stopScanner() {
       scanning = false;
+      frameCount = 0;
       cancelAnimationFrame(rafId);
       if (zxingReader) { zxingReader.reset(); zxingReader = null; }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
@@ -264,6 +304,7 @@
       if (status.textContent === 'Caméra active...') {
         status.textContent = 'Scan arrêté';
       }
+      log('Scanner arrêté');
     }
   </script>
 </body>
