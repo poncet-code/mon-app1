@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>Scanner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    h1 {
+      font-size: 18px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: #aaa;
+      margin-bottom: 32px;
+    }
+
+    #scanner-container {
+      width: 100%;
+      max-width: 360px;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      background: #111;
+      aspect-ratio: 4/3;
+    }
+
+    #scanner-container video,
+    #scanner-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+      display: block;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .scan-line {
+      width: 70%;
+      height: 2px;
+      background: #00ff88;
+      box-shadow: 0 0 8px #00ff88;
+      animation: scan 2s ease-in-out infinite;
+    }
+
+    @keyframes scan {
+      0%, 100% { transform: translateY(-40px); opacity: 0.4; }
+      50% { transform: translateY(40px); opacity: 1; }
+    }
+
+    #btn {
+      margin-top: 24px;
+      width: 100%;
+      max-width: 360px;
+      padding: 16px;
+      background: #00ff88;
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-family: monospace;
+      font-weight: bold;
+      letter-spacing: 2px;
+      cursor: pointer;
+    }
+
+    #btn.stop {
+      background: #ff4444;
+      color: #fff;
+    }
+
+    #result-box {
+      margin-top: 32px;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    #result-box label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #555;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    #code-display {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 22px;
+      letter-spacing: 3px;
+      color: #00ff88;
+      min-height: 56px;
+      word-break: break-all;
+    }
+
+    #note-box {
+      margin-top: 16px;
+    }
+
+    #note-box label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #555;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    #note {
+      width: 100%;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 14px;
+      color: #fff;
+      font-size: 16px;
+      font-family: monospace;
+      resize: none;
+      outline: none;
+    }
+
+    #note:focus {
+      border-color: #00ff88;
+    }
+
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #444;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Scanner</h1>
+
+  <div id="scanner-container">
+    <div class="overlay"><div class="scan-line"></div></div>
+  </div>
+
+  <button id="btn" onclick="toggleScanner()">SCANNER</button>
+
+  <div id="result-box">
+    <label>Code détecté</label>
+    <div id="code-display">—</div>
+  </div>
+
+  <div id="note-box">
+    <label>Note</label>
+    <textarea id="note" rows="3" placeholder="Écris quelque chose..."></textarea>
+  </div>
+
+  <div id="status">Appuie sur Scanner pour commencer</div>
+
+  <script>
+    let scanning = false;
+
+    function toggleScanner() {
+      if (!scanning) startScanner();
+      else stopScanner();
+    }
+
+    function startScanner() {
+      scanning = true;
+      document.getElementById('btn').textContent = 'ARRÊTER';
+      document.getElementById('btn').classList.add('stop');
+      document.getElementById('status').textContent = 'Caméra active...';
+
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.getElementById('scanner-container'),
+          constraints: { facingMode: "environment" }
+        },
+        decoder: {
+          readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"]
+        }
+      }, function(err) {
+        if (err) {
+          document.getElementById('status').textContent = 'Erreur caméra : ' + err;
+          stopScanner();
+          return;
+        }
+        Quagga.start();
+      });
+
+      Quagga.onDetected(function(result) {
+        const code = result.codeResult.code;
+        document.getElementById('code-display').textContent = code;
+        document.getElementById('status').textContent = 'Code détecté ✓';
+        stopScanner();
+      });
+    }
+
+    function stopScanner() {
+      scanning = false;
+      Quagga.stop();
+      document.getElementById('btn').textContent = 'SCANNER';
+      document.getElementById('btn').classList.remove('stop');
+      if (document.getElementById('status').textContent === 'Caméra active...') {
+        document.getElementById('status').textContent = 'Scan arrêté';
+      }
+    }
+  </script>
+</body>
+</html>
