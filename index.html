@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <title>Scanner</title>
+  <title>Scanner V8</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -56,6 +56,7 @@
       border-radius: 8px;
       box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
       pointer-events: none;
+      z-index: 2;
     }
 
     #btn {
@@ -74,18 +75,12 @@
       cursor: pointer;
     }
 
-    #btn.stop {
-      background: #ff4444;
-      color: #fff;
-    }
+    #btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #btn.stop { background: #ff4444; color: #fff; }
 
-    #result-box {
-      margin-top: 32px;
-      width: 100%;
-      max-width: 360px;
-    }
+    #result-box, #note-box { margin-top: 24px; width: 100%; max-width: 360px; }
 
-    #result-box label {
+    #result-box label, #note-box label {
       font-size: 11px;
       letter-spacing: 3px;
       color: #555;
@@ -106,21 +101,6 @@
       word-break: break-all;
     }
 
-    #note-box {
-      margin-top: 16px;
-      width: 100%;
-      max-width: 360px;
-    }
-
-    #note-box label {
-      font-size: 11px;
-      letter-spacing: 3px;
-      color: #555;
-      text-transform: uppercase;
-      display: block;
-      margin-bottom: 8px;
-    }
-
     #log {
       width: 100%;
       background: #111;
@@ -131,15 +111,17 @@
       font-size: 12px;
       font-family: monospace;
       min-height: 120px;
-      max-height: 200px;
+      max-height: 300px;
       overflow-y: auto;
       word-break: break-all;
     }
 
-    #log .entry { border-bottom: 1px solid #1a1a1a; padding: 4px 0; }
+    #log .entry { border-bottom: 1px solid #1a1a1a; padding: 4px 0; line-height: 1.4; }
     #log .entry.ok { color: #00ff88; }
     #log .entry.err { color: #ff4444; }
+    #log .entry.warn { color: #ffaa00; }
     #log .entry.info { color: #aaa; }
+    #log .entry.dbg { color: #666; }
 
     #status {
       margin-top: 12px;
@@ -153,13 +135,13 @@
 <body>
 
   <h1>Scanner</h1>
-  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V7</div>
+  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V8</div>
 
   <div id="scanner-container">
     <div id="scan-guide"></div>
   </div>
 
-  <button id="btn" onclick="toggleScanner()">SCANNER</button>
+  <button id="btn" disabled>CHARGEMENT...</button>
 
   <div id="result-box">
     <label>Code détecté</label>
@@ -171,106 +153,306 @@
     <div id="log"></div>
   </div>
 
-  <div id="status">Appuie sur Scanner pour commencer</div>
+  <div id="status">Initialisation...</div>
 
-  <script type="module">
-    let scanning = false;
-    let stream = null;
-    let videoEl = null;
-    let rafId = null;
-    let canvas = null;
-    let ctx = null;
-    let frameCount = 0;
-    let scanImageData = null;
+  <!-- Script CLASSIQUE (pas module) pour compat iOS max + capture des erreurs globales -->
+  <script>
+    // ---------- Logger global accessible partout ----------
+    (function () {
+      var logEl = document.getElementById('log');
+      window.uiLog = function (msg, type) {
+        type = type || 'info';
+        try {
+          var line = document.createElement('div');
+          line.className = 'entry ' + type;
+          var t = new Date().toLocaleTimeString();
+          line.textContent = t + ' — ' + msg;
+          logEl.prepend(line);
+        } catch (e) {
+          // fallback console
+          console.log('[uiLog fail]', msg, e);
+        }
+        try { console.log('[' + type + ']', msg); } catch (e) {}
+      };
 
-    function log(msg, type = 'info') {
-      const el = document.getElementById('log');
-      const line = document.createElement('div');
-      line.className = 'entry ' + type;
-      line.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
-      el.prepend(line);
+      // capture toute erreur JS non gérée
+      window.addEventListener('error', function (ev) {
+        window.uiLog('JS ERROR: ' + (ev.message || ev.error) +
+          (ev.filename ? ' @ ' + ev.filename + ':' + ev.lineno : ''), 'err');
+      });
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev.reason;
+        var msg = (r && (r.message || r.toString())) || 'unknown';
+        window.uiLog('UNHANDLED PROMISE: ' + msg, 'err');
+      });
+
+      window.uiLog('Logger prêt', 'ok');
+    })();
+
+    // ---------- Diagnostic environnement ----------
+    (function () {
+      var L = window.uiLog;
+      try {
+        L('UA: ' + navigator.userAgent, 'dbg');
+        L('Plateforme: ' + (navigator.platform || '?'), 'dbg');
+        L('Langue: ' + (navigator.language || '?'), 'dbg');
+        L('isSecureContext: ' + window.isSecureContext, window.isSecureContext ? 'ok' : 'err');
+        L('Protocole: ' + location.protocol, location.protocol === 'https:' || location.hostname === 'localhost' ? 'ok' : 'err');
+        L('mediaDevices: ' + !!(navigator.mediaDevices), navigator.mediaDevices ? 'ok' : 'err');
+        L('getUserMedia: ' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+          (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? 'ok' : 'err');
+        L('WebAssembly: ' + (typeof WebAssembly !== 'undefined'), typeof WebAssembly !== 'undefined' ? 'ok' : 'err');
+
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+          L('⚠ La caméra ne fonctionnera PAS hors HTTPS (sauf localhost). Sers ce fichier via https.', 'warn');
+        }
+
+        // iOS detection
+        var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        L('iOS détecté: ' + isIOS, 'dbg');
+        if (isIOS) {
+          L('Note iOS: tous les navigateurs utilisent WebKit. Chrome iOS = Safari sous le capot.', 'dbg');
+        }
+      } catch (e) {
+        L('Diag err: ' + e.message, 'err');
+      }
+    })();
+  </script>
+
+  <!-- Chargement de zbar-wasm : on tente plusieurs CDN, en module dynamique -->
+  <script>
+    window.scanImageData = null;
+    window.zbarReady = false;
+
+    async function loadZbar() {
+      var L = window.uiLog;
+      var sources = [
+        'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js',
+        'https://unpkg.com/@undecaf/zbar-wasm@0.10.1/dist/index.js',
+        'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js'
+      ];
+      for (var i = 0; i < sources.length; i++) {
+        var url = sources[i];
+        try {
+          L('Tentative chargement zbar-wasm: ' + url, 'info');
+          // import() dynamique fonctionne aussi en script classique
+          var mod = await import(url);
+          if (mod && typeof mod.scanImageData === 'function') {
+            window.scanImageData = mod.scanImageData;
+            window.zbarReady = true;
+            L('zbar-wasm chargé ✓ (' + url.split('@')[1].split('/')[0] + ')', 'ok');
+            return true;
+          } else {
+            L('Module chargé mais scanImageData absent: ' + Object.keys(mod || {}).join(','), 'warn');
+          }
+        } catch (e) {
+          L('Échec ' + url + ' → ' + (e && e.message ? e.message : e), 'err');
+        }
+      }
+      L('Tous les CDN ont échoué pour zbar-wasm', 'err');
+      return false;
     }
 
-    log('Script démarré');
+    (async function () {
+      var L = window.uiLog;
+      var btn = document.getElementById('btn');
+      var status = document.getElementById('status');
+      var ok = await loadZbar();
+      if (ok) {
+        btn.disabled = false;
+        btn.textContent = 'SCANNER';
+        status.textContent = 'Appuie sur Scanner pour commencer';
+      } else {
+        btn.textContent = 'ZBAR INDISPONIBLE';
+        status.textContent = 'Impossible de charger zbar-wasm';
+      }
+    })();
+  </script>
 
-    try {
-      const mod = await import('https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js');
-      scanImageData = mod.scanImageData;
-      log('zbar-wasm chargé ✓', 'ok');
-    } catch(e) {
-      log('Erreur chargement zbar-wasm : ' + e.message, 'err');
-    }
+  <!-- Logique scanner -->
+  <script>
+    var scanning = false;
+    var stream = null;
+    var videoEl = null;
+    var canvas = null;
+    var ctx = null;
+    var frameCount = 0;
+    var scanCount = 0;
+    var lastScanTs = 0;
+    var loopHandle = null;
 
-    window.toggleScanner = function() {
+    document.getElementById('btn').addEventListener('click', function () {
+      var L = window.uiLog;
+      L('Bouton cliqué (scanning=' + scanning + ')', 'dbg');
       if (!scanning) startScanner();
       else stopScanner();
-    };
+    });
 
     async function startScanner() {
-      if (!scanImageData) {
-        log('zbar-wasm pas encore chargé, attends...', 'err');
+      var L = window.uiLog;
+      if (!window.zbarReady) {
+        L('zbar-wasm pas prêt — abandon', 'err');
         return;
       }
+
       scanning = true;
       frameCount = 0;
+      scanCount = 0;
       document.getElementById('code-display').textContent = '—';
-      document.getElementById('btn').textContent = 'ARRÊTER';
-      document.getElementById('btn').classList.add('stop');
-      document.getElementById('status').textContent = 'Caméra active...';
+      var btn = document.getElementById('btn');
+      btn.textContent = 'ARRÊTER';
+      btn.classList.add('stop');
+      document.getElementById('status').textContent = 'Demande caméra...';
 
+      // Créer le <video> AVANT le getUserMedia pour respecter le user-gesture iOS
       videoEl = document.createElement('video');
-      videoEl.setAttribute('playsinline', '');
-      videoEl.setAttribute('autoplay', '');
-      videoEl.muted = true;
+      videoEl.setAttribute('playsinline', 'true');
+      videoEl.setAttribute('webkit-playsinline', 'true');
+      videoEl.setAttribute('autoplay', 'true');
+      videoEl.setAttribute('muted', 'true');
+      videoEl.muted = true; // double sécurité iOS
+      videoEl.playsInline = true;
       document.getElementById('scanner-container').prepend(videoEl);
+      L('Élément <video> créé et inséré', 'dbg');
 
-      try {
-        log('Demande accès caméra...');
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
-        videoEl.srcObject = stream;
-        await videoEl.play();
-        log('Vidéo active — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
-      } catch (err) {
-        log('Erreur caméra : ' + err.name + ' — ' + err.message, 'err');
+      // Tenter une contrainte progressive : d'abord environnement HD, sinon n'importe quelle caméra
+      var constraintsTry = [
+        { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: { facingMode: 'environment' }, audio: false },
+        { video: true, audio: false }
+      ];
+
+      var gotStream = false;
+      for (var i = 0; i < constraintsTry.length && !gotStream; i++) {
+        try {
+          L('getUserMedia tentative ' + (i + 1) + ': ' + JSON.stringify(constraintsTry[i].video), 'info');
+          stream = await navigator.mediaDevices.getUserMedia(constraintsTry[i]);
+          gotStream = true;
+          L('Stream obtenu ✓', 'ok');
+        } catch (err) {
+          L('Échec tentative ' + (i + 1) + ': ' + err.name + ' — ' + err.message, 'err');
+        }
+      }
+
+      if (!gotStream) {
+        L('Aucune contrainte n a fonctionné — abandon', 'err');
         stopScanner();
         return;
       }
 
-      canvas = document.createElement('canvas');
-      ctx = canvas.getContext('2d');
-      rafLoop();
-    }
+      try {
+        videoEl.srcObject = stream;
+        L('srcObject assigné', 'dbg');
 
-    async function rafLoop() {
-      if (!scanning) return;
+        // Attendre métadonnées avant play() — fiable sur iOS
+        await new Promise(function (resolve, reject) {
+          var done = false;
+          var to = setTimeout(function () {
+            if (done) return;
+            done = true;
+            reject(new Error('timeout loadedmetadata (5s)'));
+          }, 5000);
+          videoEl.addEventListener('loadedmetadata', function () {
+            if (done) return;
+            done = true;
+            clearTimeout(to);
+            resolve();
+          }, { once: true });
+        });
+        L('loadedmetadata reçu — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
 
-      if (videoEl.readyState < 2) {
-        rafId = requestAnimationFrame(rafLoop);
+        // play() peut throw sur iOS si l'utilisateur n'a pas interagi
+        try {
+          await videoEl.play();
+          L('video.play() OK', 'ok');
+        } catch (pe) {
+          L('video.play() échec: ' + pe.name + ' — ' + pe.message, 'err');
+          // On tente quand même de continuer (parfois ça scanne quand même)
+        }
+
+        // Diagnostic du track
+        var tracks = stream.getVideoTracks();
+        if (tracks.length) {
+          var s = tracks[0].getSettings ? tracks[0].getSettings() : {};
+          L('Track: ' + tracks[0].label + ' — ' + (s.width || '?') + 'x' + (s.height || '?') +
+            ' @' + (s.frameRate || '?') + 'fps facing=' + (s.facingMode || '?'), 'info');
+        }
+      } catch (err) {
+        L('Erreur préparation vidéo: ' + err.name + ' — ' + err.message, 'err');
+        stopScanner();
         return;
       }
 
-      canvas.width = videoEl.videoWidth;
-      canvas.height = videoEl.videoHeight;
-      ctx.drawImage(videoEl, 0, 0);
+      // Canvas — limité à 640px de large pour perf mobile
+      canvas = document.createElement('canvas');
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+      document.getElementById('status').textContent = 'Caméra active — recherche...';
+      L('Démarrage boucle de scan', 'ok');
+      scanLoop();
+    }
+
+    async function scanLoop() {
+      var L = window.uiLog;
+      if (!scanning) return;
+
+      if (!videoEl || videoEl.readyState < 2) {
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      var vw = videoEl.videoWidth;
+      var vh = videoEl.videoHeight;
+      if (!vw || !vh) {
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      // Downscale pour perf : max 640px côté long
+      var maxSide = 640;
+      var scale = Math.min(1, maxSide / Math.max(vw, vh));
+      var cw = Math.round(vw * scale);
+      var ch = Math.round(vh * scale);
+      if (canvas.width !== cw) canvas.width = cw;
+      if (canvas.height !== ch) canvas.height = ch;
 
       try {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const symbols = await scanImageData(imageData);
-        if (symbols.length > 0) {
-          const code = symbols[0].decode();
-          log('Code trouvé : ' + code + ' (' + symbols[0].typeName + ')', 'ok');
+        ctx.drawImage(videoEl, 0, 0, cw, ch);
+      } catch (e) {
+        L('drawImage err: ' + e.message, 'err');
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      // Limiter le scan à ~10/s pour ne pas saturer
+      var now = performance.now();
+      if (now - lastScanTs < 100) {
+        loopHandle = requestAnimationFrame(scanLoop);
+        return;
+      }
+      lastScanTs = now;
+
+      try {
+        var imageData = ctx.getImageData(0, 0, cw, ch);
+        scanCount++;
+        var symbols = await window.scanImageData(imageData);
+        if (symbols && symbols.length > 0) {
+          var code = symbols[0].decode();
+          var type = symbols[0].typeName || '?';
+          L('Code trouvé: ' + code + ' (' + type + ')', 'ok');
           onDetected(code);
           return;
         }
       } catch (e) {
-        log('Erreur scan : ' + e.message, 'err');
+        L('scanImageData err: ' + (e && e.message ? e.message : e), 'err');
       }
 
       frameCount++;
-      if (frameCount % 30 === 0) log('Frames : ' + frameCount);
-      rafId = requestAnimationFrame(rafLoop);
+      if (scanCount > 0 && scanCount % 20 === 0) {
+        window.uiLog('Scans effectués: ' + scanCount + ' (canvas ' + cw + 'x' + ch + ')', 'dbg');
+      }
+
+      loopHandle = requestAnimationFrame(scanLoop);
     }
 
     function onDetected(code) {
@@ -280,18 +462,30 @@
     }
 
     function stopScanner() {
+      var L = window.uiLog;
       scanning = false;
-      cancelAnimationFrame(rafId);
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      if (videoEl) { videoEl.remove(); videoEl = null; }
+      if (loopHandle) { cancelAnimationFrame(loopHandle); loopHandle = null; }
+      if (stream) {
+        stream.getTracks().forEach(function (t) {
+          try { t.stop(); } catch (e) {}
+        });
+        stream = null;
+      }
+      if (videoEl) {
+        try { videoEl.pause(); } catch (e) {}
+        videoEl.srcObject = null;
+        videoEl.remove();
+        videoEl = null;
+      }
       canvas = null; ctx = null;
-      document.getElementById('btn').textContent = 'SCANNER';
-      document.getElementById('btn').classList.remove('stop');
-      const status = document.getElementById('status');
-      if (status.textContent === 'Caméra active...') {
+      var btn = document.getElementById('btn');
+      btn.textContent = 'SCANNER';
+      btn.classList.remove('stop');
+      var status = document.getElementById('status');
+      if (/Caméra|recherche|Demande/.test(status.textContent)) {
         status.textContent = 'Scan arrêté';
       }
-      log('Scanner arrêté');
+      L('Scanner arrêté', 'info');
     }
   </script>
 </body>
