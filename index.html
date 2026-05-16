@@ -470,40 +470,58 @@
       return '﻿' + lines.join('\n') + '\n';
     }
 
+    function decodeFetchError(e, msg) {
+      if (e && (e.name === 'TypeError') || msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
+        return ' [RÉSEAU : pas d\'internet, ou api.github.com bloqué (content blocker iOS, VPN, DNS), ou token avec caractère invisible/espace en trop]';
+      }
+      if (msg.indexOf('401') !== -1 || /credentials/i.test(msg)) return ' [Token invalide / expiré / révoqué]';
+      if (msg.indexOf('403') !== -1) return ' [Token sans permission Contents Read&Write sur ce repo]';
+      if (msg.indexOf('404') !== -1) return ' [Owner/repo/branch/path incorrect, ou le repo est privé et le token n\'y a pas accès]';
+      if (msg.indexOf('409') !== -1 || msg.indexOf('422') !== -1) return ' [Conflit SHA — recharge la page]';
+      return '';
+    }
+
     async function loadDatabase() {
       if (!GH.owner || !GH.repo || !GH.path) {
         uiLog('Config GitHub incomplète — clique sur ⚙', 'warn');
         return false;
       }
+      var url = 'https://api.github.com/repos/' + GH.owner + '/' + GH.repo +
+                '/contents/' + GH.path + '?ref=' + encodeURIComponent(GH.branch);
+      uiLog('GET ' + GH.owner + '/' + GH.repo + '/' + GH.path + '@' + GH.branch, 'dbg');
       try {
-        var url = 'https://api.github.com/repos/' + GH.owner + '/' + GH.repo +
-                  '/contents/' + GH.path + '?ref=' + encodeURIComponent(GH.branch);
         var headers = { 'Accept': 'application/vnd.github+json' };
         if (GH.token) headers['Authorization'] = 'Bearer ' + GH.token;
         var res = await fetch(url, { headers: headers, cache: 'no-store' });
-        if (res.status === 404) {
-          uiLog('Fichier ' + GH.path + ' introuvable dans ' + GH.owner + '/' + GH.repo, 'err');
-          return false;
+        if (!res.ok) {
+          var b = await res.json().catch(function () { return {}; });
+          throw new Error('HTTP ' + res.status + ' — ' + (b.message || res.statusText));
         }
-        if (!res.ok) throw new Error('HTTP ' + res.status);
         var data = await res.json();
         fileSha = data.sha;
         var csv = b64decUtf8(data.content);
         parseCSV(csv);
-        uiLog('DB OK : ' + productsMap.size + ' produit(s), prochain n° = ' + nextNumero, 'ok');
+        uiLog('DB OK : ' + productsMap.size + ' produit(s), prochain n° = ' + nextNumero + ', sha=' + fileSha.substr(0, 7), 'ok');
         return true;
       } catch (e) {
-        uiLog('Erreur chargement DB : ' + (e.message || e), 'err');
+        var msg = e.message || String(e);
+        uiLog('Erreur chargement DB : ' + msg + decodeFetchError(e, msg), 'err');
         return false;
       }
     }
 
     async function saveProduct(barcode, name) {
       if (!GH.token) { uiLog('Token GitHub manquant — clique sur ⚙', 'err'); return null; }
+      if (!GH.owner || !GH.repo) { uiLog('Owner/repo manquants — clique sur ⚙', 'err'); return null; }
+      if (fileSha === null) {
+        uiLog('⚠ Pas de SHA en mémoire — la DB n\'a jamais été chargée. Re-vérifie la config et recharge la page.', 'err');
+        return null;
+      }
       var numero = nextNumero;
       productsMap.set(barcode, { numero: numero, nom: name });
       nextNumero++;
       var csv = serializeCSV();
+      uiLog('PUT ' + GH.owner + '/' + GH.repo + '/' + GH.path + ' (sha=' + fileSha.substr(0,7) + ', size=' + csv.length + ')', 'dbg');
       try {
         var url = 'https://api.github.com/repos/' + GH.owner + '/' + GH.repo +
                   '/contents/' + GH.path;
@@ -528,13 +546,14 @@
         }
         var data = await res.json();
         fileSha = data.content.sha;
-        uiLog('Produit #' + numero + ' commit ✓', 'ok');
+        uiLog('Produit #' + numero + ' commit ✓ (nouveau sha=' + fileSha.substr(0,7) + ')', 'ok');
         return numero;
       } catch (e) {
         // rollback
         productsMap.delete(barcode);
         nextNumero--;
-        uiLog('Erreur écriture : ' + (e.message || e), 'err');
+        var msg = e.message || String(e);
+        uiLog('Erreur écriture : ' + msg + decodeFetchError(e, msg), 'err');
         return null;
       }
     }
