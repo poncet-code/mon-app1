@@ -6,7 +6,6 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Scanner</title>
-  <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -26,7 +25,7 @@
       letter-spacing: 4px;
       text-transform: uppercase;
       color: #aaa;
-      margin-bottom: 32px;
+      margin-bottom: 4px;
     }
 
     #scanner-container {
@@ -109,6 +108,8 @@
 
     #note-box {
       margin-top: 16px;
+      width: 100%;
+      max-width: 360px;
     }
 
     #note-box label {
@@ -152,7 +153,7 @@
 <body>
 
   <h1>Scanner</h1>
-  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-top:-24px;margin-bottom:24px;">V6</div>
+  <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V7</div>
 
   <div id="scanner-container">
     <div id="scan-guide"></div>
@@ -172,16 +173,16 @@
 
   <div id="status">Appuie sur Scanner pour commencer</div>
 
-  <script>
+  <script type="module">
+    import { scanImageData } from 'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/index.js';
+
     let scanning = false;
     let stream = null;
     let videoEl = null;
     let rafId = null;
-    let zxingReader = null;
-    let zxingCanvas = null;
-
-    const USE_NATIVE = 'BarcodeDetector' in window;
-    let barcodeDetector = null;
+    let canvas = null;
+    let ctx = null;
+    let frameCount = 0;
 
     function log(msg, type = 'info') {
       const el = document.getElementById('log');
@@ -191,37 +192,24 @@
       el.prepend(line);
     }
 
-    log('USE_NATIVE BarcodeDetector : ' + USE_NATIVE);
-    log('User Agent : ' + navigator.userAgent.slice(0, 80));
+    log('zbar-wasm chargé', 'ok');
 
-    if (USE_NATIVE) {
-      try {
-        barcodeDetector = new BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e']
-        });
-        log('BarcodeDetector initialisé', 'ok');
-      } catch(e) {
-        log('BarcodeDetector init error : ' + e.message, 'err');
-      }
-    } else {
-      log('Fallback ZXing activé');
-    }
-
-    function toggleScanner() {
+    window.toggleScanner = function() {
       if (!scanning) startScanner();
       else stopScanner();
-    }
+    };
 
     async function startScanner() {
       scanning = true;
+      frameCount = 0;
       document.getElementById('code-display').textContent = '—';
       document.getElementById('btn').textContent = 'ARRÊTER';
       document.getElementById('btn').classList.add('stop');
       document.getElementById('status').textContent = 'Caméra active...';
-      log('Démarrage scanner...');
 
       videoEl = document.createElement('video');
       videoEl.setAttribute('playsinline', '');
+      videoEl.setAttribute('autoplay', '');
       videoEl.muted = true;
       document.getElementById('scanner-container').prepend(videoEl);
 
@@ -230,69 +218,48 @@
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
         });
-        log('Caméra obtenue', 'ok');
         videoEl.srcObject = stream;
         await videoEl.play();
-        log('Vidéo en lecture — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
+        log('Vidéo active — ' + videoEl.videoWidth + 'x' + videoEl.videoHeight, 'ok');
       } catch (err) {
         log('Erreur caméra : ' + err.name + ' — ' + err.message, 'err');
-        document.getElementById('status').textContent = 'Erreur caméra : ' + err.message;
         stopScanner();
         return;
       }
 
-      if (USE_NATIVE) {
-        rafLoop();
-      } else {
-        log('ZXing : boucle canvas manuelle...');
-        const hints = new Map([[ZXing.DecodeHintType.TRY_HARDER, true]]);
-        zxingReader = new ZXing.BrowserMultiFormatReader(hints);
-        zxingCanvas = document.createElement('canvas');
-        rafLoop();
-      }
+      canvas = document.createElement('canvas');
+      ctx = canvas.getContext('2d');
+      rafLoop();
     }
 
-    let frameCount = 0;
-    function rafLoop() {
+    async function rafLoop() {
       if (!scanning) return;
 
-      if (USE_NATIVE) {
-        barcodeDetector.detect(videoEl)
-          .then(codes => {
-            if (!scanning) return;
-            frameCount++;
-            if (frameCount % 30 === 0) log('Frames analysées : ' + frameCount);
-            if (codes.length > 0) {
-              log('Code trouvé : ' + codes[0].rawValue + ' (' + codes[0].format + ')', 'ok');
-              onDetected(codes[0].rawValue);
-            } else {
-              rafId = requestAnimationFrame(rafLoop);
-            }
-          })
-          .catch(err => {
-            log('detect() error : ' + err.message, 'err');
-            if (scanning) rafId = requestAnimationFrame(rafLoop);
-          });
-      } else {
-        if (videoEl.readyState < 2) {
-          rafId = requestAnimationFrame(rafLoop);
+      if (videoEl.readyState < 2) {
+        rafId = requestAnimationFrame(rafLoop);
+        return;
+      }
+
+      canvas.width = videoEl.videoWidth;
+      canvas.height = videoEl.videoHeight;
+      ctx.drawImage(videoEl, 0, 0);
+
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const symbols = await scanImageData(imageData);
+        if (symbols.length > 0) {
+          const code = symbols[0].decode();
+          log('Code trouvé : ' + code + ' (' + symbols[0].typeName + ')', 'ok');
+          onDetected(code);
           return;
         }
-        zxingCanvas.width = videoEl.videoWidth;
-        zxingCanvas.height = videoEl.videoHeight;
-        zxingCanvas.getContext('2d').drawImage(videoEl, 0, 0);
-        try {
-          const result = zxingReader.decodeFromCanvas(zxingCanvas);
-          if (result) {
-            log('ZXing trouvé : ' + result.getText(), 'ok');
-            onDetected(result.getText());
-            return;
-          }
-        } catch (e) { /* NotFoundException = frame sans code, normal */ }
-        frameCount++;
-        if (frameCount % 30 === 0) log('ZXing frames : ' + frameCount);
-        rafId = requestAnimationFrame(rafLoop);
+      } catch (e) {
+        log('Erreur scan : ' + e.message, 'err');
       }
+
+      frameCount++;
+      if (frameCount % 30 === 0) log('Frames : ' + frameCount);
+      rafId = requestAnimationFrame(rafLoop);
     }
 
     function onDetected(code) {
@@ -303,12 +270,10 @@
 
     function stopScanner() {
       scanning = false;
-      frameCount = 0;
       cancelAnimationFrame(rafId);
-      if (zxingReader) { zxingReader = null; }
-      zxingCanvas = null;
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (videoEl) { videoEl.remove(); videoEl = null; }
+      canvas = null; ctx = null;
       document.getElementById('btn').textContent = 'SCANNER';
       document.getElementById('btn').classList.remove('stop');
       const status = document.getElementById('status');
