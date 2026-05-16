@@ -1,3 +1,74 @@
+<!--
+  ═══════════════════════════════════════════════════════════════
+  SCANNER DE CODE-BARRES — Contexte pour Claude
+  ═══════════════════════════════════════════════════════════════
+
+  Auteur      : Lance (lachainedefrance@gmail.com)
+  Hébergement : GitHub Pages (HTTPS automatique)
+  Cible       : Chrome sur iOS (iPhone/iPad)
+  État        : Fonctionne parfaitement (V9 · iOS compat)
+                NE PAS RÉGRESSER cette base.
+
+  Stratégie technique :
+  ─────────────────────
+  - API BarcodeDetector native quand dispo, sinon fallback
+    polyfill ZXing chargé depuis CDN (esm.sh → jsdelivr →
+    unpkg, dans cet ordre).
+  - getUserMedia avec 3 niveaux de contraintes (caméra arrière
+    HD → caméra arrière simple → n'importe quelle caméra) pour
+    maximiser la compatibilité iOS.
+  - Tags vidéo : playsinline + webkit-playsinline + muted +
+    autoplay (OBLIGATOIRE pour Safari/Chrome iOS — sans ça,
+    la vidéo refuse de jouer en inline).
+  - Boucle de scan via requestAnimationFrame, throttlée à
+    150ms pour ménager le CPU.
+  - Logger UI persistant en bas de l'écran : impossible
+    d'ouvrir DevTools sur iPhone facilement, donc tout est
+    loggé visuellement (entrées ok/err/warn/info/dbg).
+
+  Formats détectés :
+  ──────────────────
+  qr_code, ean_13, ean_8, code_128, code_39, code_93, codabar,
+  upc_a, upc_e, itf, pdf417, data_matrix, aztec.
+  Fallback automatique sur qr_code seul si l'instanciation
+  full-formats échoue.
+
+  Contraintes importantes :
+  ─────────────────────────
+  - HTTPS obligatoire (sauf localhost) pour getUserMedia.
+  - Ne PAS toucher aux attributs vidéo (playsinline etc.) ni
+    aux 3 tentatives getUserMedia sans bien mesurer l'impact
+    sur iOS — c'est la partie la plus fragile.
+  - Le throttle à 150ms est volontaire, ne pas baisser.
+
+  Base de données :
+  ─────────────────
+  - Fichier CSV (produits.csv par défaut) hébergé sur le même
+    repo GitHub. 3 colonnes : Numéro ; Code-barres ; Nom.
+    Séparateur point-virgule (Excel FR friendly), BOM UTF-8.
+  - Lecture ET écriture via l'API GitHub (api.github.com).
+    Pas besoin de backend — la PAT (Personal Access Token)
+    de l'utilisateur est stockée en localStorage côté iPhone.
+  - Bouton ⚙ en haut à droite : owner / repo / branch / path
+    / token. La config est persistée localement.
+  - Flow scan :
+      • Match → affiche "#N° — Nom"
+      • No match → modale custom demande le nom →
+        PUT GitHub avec next numéro auto-incrémenté →
+        commit message "Ajout produit #N : Nom"
+  - SHA du fichier toujours retenu pour les writes (GitHub
+    refuse un PUT sans le SHA courant — protection conflit).
+  - En cas d'échec write : rollback du Map en mémoire.
+
+  Sécurité du token :
+  ──────────────────
+  - Fine-grained PAT, scope "Contents: Read & Write" sur LE
+    SEUL repo concerné. Aucun autre droit.
+  - Le token n'est jamais commité, jamais loggé, juste stocké
+    dans localStorage de l'iPhone (effacé si "Effacer
+    données du site" dans Safari/Chrome iOS).
+  ═══════════════════════════════════════════════════════════════
+-->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -130,9 +201,146 @@
       letter-spacing: 1px;
       text-align: center;
     }
+
+    /* ─── Bouton config + Modales ─── */
+    #cfg-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #aaa;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 100;
+    }
+    .modal[hidden] { display: none; }
+
+    .modal-panel {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .modal-panel h2 {
+      color: #00ff88;
+      font-size: 14px;
+      letter-spacing: 2px;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+
+    .modal-panel label {
+      display: block;
+      margin-bottom: 12px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: #888;
+      text-transform: uppercase;
+    }
+
+    .modal-panel input {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin-top: 4px;
+      background: #000;
+      border: 1px solid #222;
+      border-radius: 6px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    .modal-help {
+      font-size: 11px;
+      color: #555;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .modal-actions button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      font-family: monospace;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      letter-spacing: 1px;
+    }
+    .btn-cancel { background: #333; color: #aaa; }
+    .btn-save   { background: #00ff88; color: #000; }
+
+    .new-code {
+      font-size: 14px;
+      color: #00ff88;
+      background: #000;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      word-break: break-all;
+      letter-spacing: 1px;
+    }
   </style>
 </head>
 <body>
+
+  <button id="cfg-btn" title="Configuration GitHub">⚙</button>
+
+  <!-- Modale Configuration GitHub -->
+  <div id="cfg-modal" class="modal" hidden>
+    <div class="modal-panel">
+      <h2>Config GitHub</h2>
+      <label>Owner (utilisateur)<input type="text" id="cfg-owner" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label>Repo<input type="text" id="cfg-repo" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label>Branch<input type="text" id="cfg-branch" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label>Chemin du CSV<input type="text" id="cfg-path" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label>Token (PAT)<input type="password" id="cfg-token" autocomplete="off"></label>
+      <p class="modal-help">Token : github.com → Settings → Developer settings → Personal access tokens → Fine-grained → New token. Permission « Contents : Read & Write » sur ce repo uniquement. Le token reste sur ton iPhone (localStorage), il n'est jamais envoyé ailleurs.</p>
+      <div class="modal-actions">
+        <button id="cfg-cancel" class="btn-cancel">Annuler</button>
+        <button id="cfg-save" class="btn-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Nouveau produit -->
+  <div id="new-modal" class="modal" hidden>
+    <div class="modal-panel">
+      <h2>Nouveau produit</h2>
+      <div class="new-code" id="new-code-val"></div>
+      <label>Nom du produit<input type="text" id="new-name" autocomplete="off"></label>
+      <div class="modal-actions">
+        <button id="new-cancel" class="btn-cancel">Annuler</button>
+        <button id="new-save" class="btn-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
 
   <h1>Scanner</h1>
   <div style="font-size:11px;letter-spacing:3px;color:#333;margin-bottom:24px;">V9 · iOS compat</div>
@@ -201,6 +409,194 @@
       }
     })();
 
+    // ═══════════════════════════════════════════════════════════════
+    // BASE DE DONNÉES — CSV hébergé sur GitHub
+    // ═══════════════════════════════════════════════════════════════
+    var GH = {
+      owner:  localStorage.getItem('gh_owner')  || '',
+      repo:   localStorage.getItem('gh_repo')   || '',
+      branch: localStorage.getItem('gh_branch') || 'main',
+      path:   localStorage.getItem('gh_path')   || 'produits.csv',
+      token:  localStorage.getItem('gh_token')  || ''
+    };
+    function saveGHConfig() {
+      localStorage.setItem('gh_owner',  GH.owner);
+      localStorage.setItem('gh_repo',   GH.repo);
+      localStorage.setItem('gh_branch', GH.branch);
+      localStorage.setItem('gh_path',   GH.path);
+      localStorage.setItem('gh_token',  GH.token);
+    }
+
+    var productsMap = new Map();   // barcode → { numero, nom }
+    var nextNumero = 1;
+    var fileSha = null;            // SHA GitHub du CSV (requis pour les writes)
+
+    // base64 ⇄ UTF-8 (l'API GitHub renvoie/attend du base64)
+    function b64encUtf8(str) { return btoa(unescape(encodeURIComponent(str))); }
+    function b64decUtf8(b64) { return decodeURIComponent(escape(atob(b64.replace(/\n/g, '')))); }
+
+    function parseCSV(text) {
+      productsMap.clear();
+      nextNumero = 1;
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);  // strip BOM
+      var lines = text.split(/\r?\n/);
+      for (var i = 1; i < lines.length; i++) {     // skip header
+        var line = lines[i].trim();
+        if (!line) continue;
+        var parts = line.split(';');
+        var num = parseInt(parts[0], 10);
+        var barcode = (parts[1] || '').trim();
+        var name = parts.slice(2).join(';').trim();
+        if (name.charAt(0) === '"' && name.charAt(name.length - 1) === '"') {
+          name = name.slice(1, -1).replace(/""/g, '"');
+        }
+        if (!barcode || isNaN(num)) continue;
+        productsMap.set(barcode, { numero: num, nom: name });
+        if (num >= nextNumero) nextNumero = num + 1;
+      }
+    }
+
+    function serializeCSV() {
+      var lines = ['Numéro;Code-barres;Nom du produit'];
+      var entries = Array.from(productsMap.entries());
+      entries.sort(function (a, b) { return a[1].numero - b[1].numero; });
+      for (var i = 0; i < entries.length; i++) {
+        var bc = entries[i][0];
+        var info = entries[i][1];
+        var name = info.nom;
+        if (/[;"\n\r]/.test(name)) name = '"' + name.replace(/"/g, '""') + '"';
+        lines.push(info.numero + ';' + bc + ';' + name);
+      }
+      return '﻿' + lines.join('\n') + '\n';
+    }
+
+    async function loadDatabase() {
+      if (!GH.owner || !GH.repo || !GH.path) {
+        uiLog('Config GitHub incomplète — clique sur ⚙', 'warn');
+        return false;
+      }
+      try {
+        var url = 'https://api.github.com/repos/' + GH.owner + '/' + GH.repo +
+                  '/contents/' + GH.path + '?ref=' + encodeURIComponent(GH.branch);
+        var headers = { 'Accept': 'application/vnd.github+json' };
+        if (GH.token) headers['Authorization'] = 'Bearer ' + GH.token;
+        var res = await fetch(url, { headers: headers, cache: 'no-store' });
+        if (res.status === 404) {
+          uiLog('Fichier ' + GH.path + ' introuvable dans ' + GH.owner + '/' + GH.repo, 'err');
+          return false;
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+        fileSha = data.sha;
+        var csv = b64decUtf8(data.content);
+        parseCSV(csv);
+        uiLog('DB OK : ' + productsMap.size + ' produit(s), prochain n° = ' + nextNumero, 'ok');
+        return true;
+      } catch (e) {
+        uiLog('Erreur chargement DB : ' + (e.message || e), 'err');
+        return false;
+      }
+    }
+
+    async function saveProduct(barcode, name) {
+      if (!GH.token) { uiLog('Token GitHub manquant — clique sur ⚙', 'err'); return null; }
+      var numero = nextNumero;
+      productsMap.set(barcode, { numero: numero, nom: name });
+      nextNumero++;
+      var csv = serializeCSV();
+      try {
+        var url = 'https://api.github.com/repos/' + GH.owner + '/' + GH.repo +
+                  '/contents/' + GH.path;
+        var body = {
+          message: 'Ajout produit #' + numero + ' : ' + name,
+          content: b64encUtf8(csv),
+          branch: GH.branch,
+          sha: fileSha
+        };
+        var res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'Authorization': 'Bearer ' + GH.token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          var errBody = await res.json().catch(function () { return {}; });
+          throw new Error('HTTP ' + res.status + ' — ' + (errBody.message || res.statusText));
+        }
+        var data = await res.json();
+        fileSha = data.content.sha;
+        uiLog('Produit #' + numero + ' commit ✓', 'ok');
+        return numero;
+      } catch (e) {
+        // rollback
+        productsMap.delete(barcode);
+        nextNumero--;
+        uiLog('Erreur écriture : ' + (e.message || e), 'err');
+        return null;
+      }
+    }
+
+    // ─── Modales (config + nouveau produit) ───
+    function openConfig() {
+      document.getElementById('cfg-owner').value  = GH.owner;
+      document.getElementById('cfg-repo').value   = GH.repo;
+      document.getElementById('cfg-branch').value = GH.branch;
+      document.getElementById('cfg-path').value   = GH.path;
+      document.getElementById('cfg-token').value  = GH.token;
+      document.getElementById('cfg-modal').hidden = false;
+    }
+    document.getElementById('cfg-btn').addEventListener('click', openConfig);
+    document.getElementById('cfg-cancel').addEventListener('click', function () {
+      document.getElementById('cfg-modal').hidden = true;
+    });
+    document.getElementById('cfg-save').addEventListener('click', function () {
+      GH.owner  = document.getElementById('cfg-owner').value.trim();
+      GH.repo   = document.getElementById('cfg-repo').value.trim();
+      GH.branch = document.getElementById('cfg-branch').value.trim() || 'main';
+      GH.path   = document.getElementById('cfg-path').value.trim()   || 'produits.csv';
+      GH.token  = document.getElementById('cfg-token').value.trim();
+      saveGHConfig();
+      document.getElementById('cfg-modal').hidden = true;
+      uiLog('Config sauvegardée', 'ok');
+      loadDatabase();
+    });
+
+    function promptNewProduct(code, callback) {
+      document.getElementById('new-code-val').textContent = code;
+      var input = document.getElementById('new-name');
+      input.value = '';
+      document.getElementById('new-modal').hidden = false;
+      setTimeout(function () { try { input.focus(); } catch (e) {} }, 80);
+
+      var saveBtn = document.getElementById('new-save');
+      var cancelBtn = document.getElementById('new-cancel');
+      function cleanup() {
+        document.getElementById('new-modal').hidden = true;
+        saveBtn.removeEventListener('click', onSave);
+        cancelBtn.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKey);
+      }
+      function onSave() {
+        var v = input.value.trim();
+        cleanup();
+        callback(v || null);
+      }
+      function onCancel() { cleanup(); callback(null); }
+      function onKey(e) {
+        if (e.key === 'Enter') onSave();
+        else if (e.key === 'Escape') onCancel();
+      }
+      saveBtn.addEventListener('click', onSave);
+      cancelBtn.addEventListener('click', onCancel);
+      input.addEventListener('keydown', onKey);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SCANNER (logique d'origine, intouchée)
+    // ═══════════════════════════════════════════════════════════════
     var scanning = false;
     var stream = null;
     var videoEl = null;
@@ -283,6 +679,13 @@
       btn.disabled = false;
       btn.textContent = 'SCANNER';
       status.textContent = 'Appuie sur Scanner pour commencer';
+
+      // Chargement de la base de données (CSV sur GitHub)
+      if (GH.owner && GH.repo) {
+        loadDatabase();
+      } else {
+        uiLog('Pas de config GitHub — ouvre ⚙ pour la renseigner', 'warn');
+      }
     })();
 
     document.getElementById('btn').addEventListener('click', function () {
@@ -418,9 +821,36 @@
     }
 
     function onDetected(code) {
-      document.getElementById('code-display').textContent = code;
-      document.getElementById('status').textContent = 'Code détecté ✓';
       stopScanner();
+      var display = document.getElementById('code-display');
+      var status = document.getElementById('status');
+      var hit = productsMap.get(code);
+      if (hit) {
+        display.textContent = '#' + hit.numero + ' — ' + hit.nom;
+        status.textContent = 'Produit existant ✓';
+        uiLog('Match : #' + hit.numero + ' ' + hit.nom, 'ok');
+        return;
+      }
+      uiLog('Code inconnu : ' + code, 'warn');
+      display.textContent = code;
+      status.textContent = 'Nouveau code — saisis le nom...';
+      promptNewProduct(code, function (name) {
+        if (!name) {
+          status.textContent = 'Enregistrement annulé';
+          display.textContent = code + ' (non enregistré)';
+          return;
+        }
+        status.textContent = 'Enregistrement sur GitHub...';
+        saveProduct(code, name).then(function (numero) {
+          if (numero) {
+            display.textContent = '#' + numero + ' — ' + name + ' (NOUVEAU)';
+            status.textContent = 'Nouveau produit enregistré ✓';
+          } else {
+            display.textContent = code;
+            status.textContent = 'Échec enregistrement — voir logs';
+          }
+        });
+      });
     }
 
     function stopScanner() {
